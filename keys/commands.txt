@@ -1,0 +1,2 @@
+openssl pkcs8 -topk8 -inform PEM -outform PEM -in 2048.key -nocrypt -out 2048.pkcs8
+openssl rsa -in 2048.key -outform PEM -pubout -out 2048.pub

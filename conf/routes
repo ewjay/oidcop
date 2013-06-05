@@ -1,0 +1,35 @@
+# Routes
+# This file defines all application routes (Higher priority routes first)
+# ~~~~
+
+# Home page
+GET     /.well-known/openid-configuration    controllers.OpenidConnect.openidConfig
+GET     /.well-known/webfinger               controllers.OpenidConnect.webFinger
+POST    /oidcop/register                     controllers.OpenidConnect.register
+GET     /oidcop/auth1                         controllers.OpenidConnect.auth1
+GET     /oidcop/auth                         controllers.OpenidConnect.auth
+GET     /oidcop/token                        controllers.OpenidConnect.token
+POST    /oidcop/token                        controllers.OpenidConnect.token
+GET     /oidcop/userinfo                     controllers.OpenidConnect.userinfo
+POST    /oidcop/userinfo                     controllers.OpenidConnect.userinfo
+GET     /oidcop/dbtest                       controllers.OpenidConnect.dbTest
+GET     /oidcop/jwktest                      controllers.OpenidConnect.jwkTest
+GET     /                                    controllers.Application.index
+
+
+# Authentication
+GET     /start                      controllers.Application.login
+POST    /login                      controllers.Application.authenticate
+GET     /logout                     controllers.Application.logout
+
+
+# Message
+GET     /message/main               controllers.Messages.main
+GET     /message/list               controllers.Messages.list
+GET     /message/detail/:id         controllers.Messages.detail(id: Int)
+GET     /message/write              controllers.Messages.write
+
+
+# Map static resources from the /public folder to the /assets URL path
+GET     /assets/*file               controllers.Assets.at(path="/public", file)
+# GET     /op.jwk                     controllers.Assets.at(path="/public/keys", file="op.jwk")
