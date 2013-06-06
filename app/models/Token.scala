@@ -268,15 +268,27 @@ function create_token_info($uname, $confirm=0, $atype="none", $persona=NULL, $at
    */
 
 
-  def create_token_info(username : String, persona : String, attribute_list : List[String], get : Map[String, String], req : Map[String, String]) : JsObject = {
+  def create_token_info(username : String, persona : String, attribute_list : List[String], get : JsObject, req : JsObject) : JsObject = {
     Json.obj(
               "name" -> RandomStringUtils.randomAlphanumeric(32),
               "e" -> new Timestamp(DateTime.now().plusMinutes(10).getMillis).getTime,
               "uname" -> username ,
               "p" -> persona,
               "l" -> JsArray(attribute_list.map(x => JsString(x)).toSeq),
-              "g" -> JsObject(get.map({case(x,y) => (x, JsString(y))}).toSeq),
-              "r" -> JsObject(req.map({case(x,y) => (x, JsString(y))}).toSeq)
+              "g" -> get,
+              "r" -> req
             )
+  }
+
+  def create_token_info(username : String, persona : String, attribute_list : List[String], get : Map[String, String], req : Map[String, String]) : JsObject = {
+    Json.obj(
+      "name" -> RandomStringUtils.randomAlphanumeric(32),
+      "e" -> new Timestamp(DateTime.now().plusMinutes(10).getMillis).getTime,
+      "uname" -> username ,
+      "p" -> persona,
+      "l" -> JsArray(attribute_list.map(x => JsString(x)).toSeq),
+      "g" -> JsObject(get.map({case(x,y) => (x, JsString(y))}).toSeq),
+      "r" -> JsObject(req.map({case(x,y) => (x, JsString(y))}).toSeq)
+    )
   }
 }

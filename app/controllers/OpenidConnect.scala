@@ -314,6 +314,73 @@ object OpenidConnect extends Controller with OptionalAuthElement with AuthConfig
   }
 
 
+  def getRequestParamsAsJson(req : Map[String, String]) : JsObject = {
+    val specialKeys : Seq[String] = Seq("claims", "request", "requst_uri")
+    val filtered : Map[String, String] = req.filterKeys(p => !specialKeys.contains(p))
+
+    val params = filtered.map {
+      case (x, y) => (x,Json.toJsFieldJsValueWrapper(y))
+    }
+
+    var jsonParams : JsObject = Json.obj(params.toSeq:_*)
+    val claims = req.getOrElse("claims", "")
+    if(!claims.isEmpty)
+      jsonParams = jsonParams ++ Json.parse(claims).as[JsObject]
+
+    var request = req.getOrElse("request", "")
+    val requestUri = req.getOrElse("request_uri", "")
+    if(!requestUri.isEmpty)
+      request = getSSLURLContents(requestUri)
+    if(!request.isEmpty){
+      val joseObject : JOSEObject = JOSEObject.parse(request)
+      val payload : JsObject = Json.parse(joseObject.getPayload.toString).as[JsObject]
+      Logger.trace("req payload = " + payload.toString)
+      jsonParams = jsonParams ++ payload
+    }
+    Logger.trace("final req = " + jsonParams.toString)
+
+    Logger.trace("idtoken claims = " + getIdTokenClaims(jsonParams))
+    Logger.trace("userinfo claims = " + getUserInfoClaims(jsonParams))
+    jsonParams
+  }
+
+
+  def getRequestClaims(req : JsObject, subKey : String) : Seq[String] = {
+    val json : Option[JsObject] = (req \ "claims" \ subKey).asOpt[JsObject]
+
+    json match {
+      case None => Seq("")
+      case Some(_) => {
+        json.get.keys.toSeq
+      }
+    }
+  }
+
+ def getUserInfoClaims(req : JsObject) : Seq[String] = {
+   var scopeClaims : Seq[String] = Seq()
+   val scopes = (req \ "scope").asOpt[String].getOrElse("").split(' ')
+   if(!scopes.isEmpty) {
+     if(scopes.contains("profile"))
+       scopeClaims = scopeClaims ++ Seq("name", "family_name", "given_name", "middle_name", "nickname", "preferred_username", "profile", "picture", "website", "gender", "birthdate", "zoneinfo", "locale", "updated_time")
+     if(scopes.contains("email"))
+       scopeClaims = scopeClaims ++ Seq("email", "email_verified")
+     if(scopes.contains("address"))
+       scopeClaims = scopeClaims ++ Seq("address", "email_verified")
+     if(scopes.contains("phone"))
+       scopeClaims = scopeClaims ++ Seq("phone_number", "phone_number_verified")
+   }
+   val userInfoClaims : Seq[String] = getRequestClaims(req, "userinfo")
+   Logger.trace("scope claims = " + scopeClaims)
+   Logger.trace("userinfo claims = " + userInfoClaims)
+   Logger.trace("all claims = " + (scopeClaims ++ userInfoClaims).toSeq)
+
+   (scopeClaims ++ userInfoClaims).toSet.toSeq
+ }
+
+  def getIdTokenClaims(req : JsObject) : Seq[String] = {
+    getRequestClaims(req, "id_token")
+  }
+
   def handleAuth(request: Request[AnyContent], user : Option[User]) : Result =  {
     var redirectUri : String = ""
     var state = ""
@@ -355,9 +422,10 @@ object OpenidConnect extends Controller with OptionalAuthElement with AuthConfig
         attribList = attribList ++ Array("phone_number", "phone_number_verified")
 
       val reqGet = request.queryString.map({case(x,y:Seq[String]) => x-> y.mkString(",")})
+      val requestedClaimsJson = getRequestParamsAsJson(reqGet)
       if(responseTypes.contains("code")) {
 //        codeVal = RandomStringUtils.randomAlphanumeric(20)
-        val codeInfo : JsObject = Token.create_token_info("alice", "Default", attribList.toList, reqGet, reqGet)
+        val codeInfo : JsObject = Token.create_token_info("alice", "Default", attribList.toList, JsObject(reqGet.map({case(x,y) => (x, JsString(y))}).toSeq), requestedClaimsJson)
         codeVal = (codeInfo \ "name").asOpt[String].get
         val code = Token(0, 1, codeVal, Some(0), client.get.fields.get("client_id").asInstanceOf[Option[String]], None, Some(DateTime.now), Some(DateTime.now.plusDays(1)), Some(codeInfo.toString))
         Token.insert(code)
@@ -366,7 +434,7 @@ object OpenidConnect extends Controller with OptionalAuthElement with AuthConfig
 
       if(responseTypes.contains("token")) {
 //        tokenVal = RandomStringUtils.randomAlphanumeric(20)
-        val tokenInfo : JsObject = Token.create_token_info("alice", "Default", attribList.toList, reqGet, reqGet)
+        val tokenInfo : JsObject = Token.create_token_info("alice", "Default", attribList.toList, JsObject(reqGet.map({case(x,y) => (x, JsString(y))}).toSeq), requestedClaimsJson)
         tokenVal = (tokenInfo \ "name").asOpt[String].get
         val token = Token(0, 1, tokenVal, Some(1), client.get.fields.get("client_id").asInstanceOf[Option[String]], None, Some(DateTime.now), Some(DateTime.now.plusDays(1)), Some(tokenInfo.toString))
         Token.insert(token)
@@ -375,7 +443,7 @@ object OpenidConnect extends Controller with OptionalAuthElement with AuthConfig
 
       if(responseTypes.contains("id_token")) {
         val cid : Option[String] = client.get.fields.get("client_id").asInstanceOf[Option[Option[String]]].get
-        val idt = getJWS("RS256", makeIdToken(user.get.login, cid.get, nonce))
+        val idt = getJWS("RS256", makeIdToken(user.get.login, cid.get, Map(), nonce))
         queryString += "id_token" -> Seq(idt )
       }
 
@@ -644,11 +712,27 @@ object OpenidConnect extends Controller with OptionalAuthElement with AuthConfig
       dbToken.token = RandomStringUtils.randomAlphanumeric(32)
       dbToken.token_type = Some(1)
       Token.insert(dbToken)
-      val jsonReq : JsObject = Json.parse(dbToken.info.get) .as[JsObject]
+      val jsonReq : JsObject = Json.parse(dbToken.info.get).as[JsObject]
+      val account : Account = Account.findById(dbToken.account_id).get
+      val idTokenClaimsList = getIdTokenClaims((jsonReq \ "r").as[JsObject] )
+      Logger.trace("idtoken claims = " + idTokenClaimsList)
+      val persona = Persona.findByAccountPersona(account, (jsonReq \ "p").asOpt[String].getOrElse("Default")).get
+      val idTokenClaims : Map[String, Any] = idTokenClaimsList.map{ claimName =>
+        claimName match {
+          case "phone_number_verified" | "email_verified" => persona.fields.getOrElse(claimName, Some(0)).asInstanceOf[Option[Int]].get match {
+            case 0 => (claimName, false)
+            case 1 => (claimName, true)
+          }
+//          case "address" => (claimName, new net.minidev.json.JSONObject().put("formatted", persona.fields.getOrElse(claimName, Some("")).asInstanceOf[Option[String]].get))
+          case "address" => val addressMap = new java.util.HashMap[String, java.lang.Object]; addressMap.put("formatted", persona.fields.getOrElse(claimName, Some("")).asInstanceOf[Option[String]].get);(claimName, addressMap)
+          case "updated_time" => (claimName, persona.fields.getOrElse(claimName, Some(DateTime.now)).asInstanceOf[Option[DateTime]].get)
+          case field : String => (field, persona.fields.getOrElse(field, Some("")).asInstanceOf[Option[String]].get)
+        }
+      }.toMap
 
       val jsonResponse = Json.obj(
         "access_token" -> dbToken.token,
-        "id_token" -> getJWS("RS256", makeIdToken("alice1", dbToken.client.get, (jsonReq \ "r" \ "nonce").asInstanceOf[JsString].value)),
+        "id_token" -> getJWS("RS256", makeIdToken(account.login, dbToken.client.get, idTokenClaims,(jsonReq \ "r" \ "nonce").asOpt[String].getOrElse(""))),
         "token_type" -> "bearer",
         "expires_in" -> 3600
       )
@@ -662,29 +746,29 @@ object OpenidConnect extends Controller with OptionalAuthElement with AuthConfig
   }
 
 
- def getIdTokenClaims(allowedList : Seq[String], reqParams : Map[String, String]) : Seq[String] = {
+// def getIdTokenClaims(allowedList : Seq[String], reqParams : Map[String, String]) : Seq[String] = {
+//
+//
+//   Seq("")
+// }
 
-
-   Seq("")
- }
-
-  def getUserInfoClaims(jsonReq : JsValue) : Seq[String] = {
-
-    val allowedList : Array[String] = (jsonReq \ "l").as[Array[String]]
-    val persona : String = (jsonReq \ "p").as[String]
-    val scopes : Array[String] = (jsonReq \ "r" \ "scope").as[String].split(' ')
-
-    var attribList :Array[String] = Array()
-    if(scopes.contains("profile"))
-      attribList = attribList ++ Array("name", "family_name", "given_name", "middle_name", "nickname", "preferred_username", "profile", "picture", "website", "gender", "birthdate", "zoneinfo", "locale", "updated_time")
-    if(scopes.contains("email"))
-      attribList = attribList ++ Array("email", "email_verified")
-    if(scopes.contains("address"))
-      attribList = attribList ++ Array("address", "email_verified")
-    if(scopes.contains("phone"))
-      attribList = attribList ++ Array("phone_number", "phone_number_verified")
-    allowedList.filter(f => attribList.contains(f))
-  }
+//  def getUserInfoClaims(jsonReq : JsValue) : Seq[String] = {
+//
+//    val allowedList : Array[String] = (jsonReq \ "l").as[Array[String]]
+//    val persona : String = (jsonReq \ "p").as[String]
+//    val scopes : Array[String] = (jsonReq \ "r" \ "scope").as[String].split(' ')
+//
+//    var attribList :Array[String] = Array()
+//    if(scopes.contains("profile"))
+//      attribList = attribList ++ Array("name", "family_name", "given_name", "middle_name", "nickname", "preferred_username", "profile", "picture", "website", "gender", "birthdate", "zoneinfo", "locale", "updated_time")
+//    if(scopes.contains("email"))
+//      attribList = attribList ++ Array("email", "email_verified")
+//    if(scopes.contains("address"))
+//      attribList = attribList ++ Array("address", "email_verified")
+//    if(scopes.contains("phone"))
+//      attribList = attribList ++ Array("phone_number", "phone_number_verified")
+//    allowedList.filter(f => attribList.contains(f))
+//  }
 
 
   def userinfo = Action { implicit request =>
@@ -707,7 +791,7 @@ object OpenidConnect extends Controller with OptionalAuthElement with AuthConfig
         throw OidcException("invalid_request", "profile not found")
       val persona : Persona = optPersona.get
 
-      val allowedUserInfoClaims : Seq[String] = (getUserInfoClaims(jsonReq) ++ List("sub")).asInstanceOf[Seq[String]]
+      val allowedUserInfoClaims : Seq[String] = (getUserInfoClaims((jsonReq \ "r").as[JsObject]) ++ List("sub")).asInstanceOf[Seq[String]]
       Logger.trace("userinfo allowed list = " + allowedUserInfoClaims)
 
       val returnClaims = allowedUserInfoClaims.map(f => f match {
@@ -835,7 +919,7 @@ object OpenidConnect extends Controller with OptionalAuthElement with AuthConfig
     Play.application.configuration.getString(key).get
   }
 
-  def makeIdToken(sub : String, client : String, nonce : String = "") : String = {
+  def makeIdToken(sub : String, client : String, claims : Map[String, Any] = Map(), nonce : String = "") : String = {
 
     var jwtClaims : JWTClaimsSet  = new JWTClaimsSet()
     jwtClaims.setIssuer(getConfig("op.issuer"))
@@ -848,8 +932,10 @@ object OpenidConnect extends Controller with OptionalAuthElement with AuthConfig
     jwtClaims.setNotBeforeTime(new java.util.Date())
     jwtClaims.setIssueTime(new java.util.Date())
     jwtClaims.setJWTID(java.util.UUID.randomUUID().toString)
+    claims.foreach{ case (key, value) => jwtClaims.setCustomClaim(key, value)}
     if(!nonce.isEmpty)
       jwtClaims.setCustomClaim("nonce", nonce)
+    Logger.trace("idtoken string = " + jwtClaims.toJSONObject.toJSONString)
     jwtClaims.toJSONObject.toJSONString
   }
 
