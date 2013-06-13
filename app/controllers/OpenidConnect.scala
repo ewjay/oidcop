@@ -8,6 +8,7 @@ import play.api.db._
 import play.api.Play.current
 import play.api.data.Forms._
 import play.api.data._
+import play.api.cache.Cache
 import models._
 import com.nimbusds.jose._
 import com.nimbusds.jose.crypto._
@@ -411,12 +412,25 @@ object OpenidConnect extends Controller with OptionalAuthElement with AuthConfig
       val state = request.getQueryString("state").getOrElse("")
       val nonce = request.getQueryString("nonce").getOrElse("")
 
+      val reqGet = request.queryString.map({case(x,y:Seq[String]) => x-> y.mkString(",")})
+      val requestedClaimsJson = getRequestParamsAsJson(reqGet)
+
+      Cache.set("session."+request.session.get("sessionid").get+".get", reqGet)
+      Cache.set("session."+request.session.get("sessionid").get, requestedClaimsJson)
+
+      Logger.trace("sessionid = session." + request.session.get("sessionid").get)
+      Logger.trace("setting json obj = " + requestedClaimsJson)
+
+      val requestedClaimsJson1 : JsObject = Cache.getAs[JsObject]("session."+request.session.get("sessionid").get).get
+      Logger.trace("json request = " + requestedClaimsJson1)
+
+      return Ok(views.html.confirm.render())
+
       var codeVal = ""
       var tokenVal = ""
 
 
-      val reqGet = request.queryString.map({case(x,y:Seq[String]) => x-> y.mkString(",")})
-      val requestedClaimsJson = getRequestParamsAsJson(reqGet)
+
       var allowedClaims : Seq[String] = getAllRequestedClaims(requestedClaimsJson)
       if(responseTypes.contains("code")) {
 //        codeVal = RandomStringUtils.randomAlphanumeric(20)
@@ -497,6 +511,155 @@ object OpenidConnect extends Controller with OptionalAuthElement with AuthConfig
 
   }
 
+
+
+  def confirm = StackAction { implicit request =>
+    var redirectUri : String = ""
+    var state = ""
+    var isQuery = true
+    val user : Option[User] = loggedIn
+
+
+
+    try {
+
+      Logger.trace("sessionid = session." + request.session.get("sessionid").get)
+      val reqGet : Map[String, String] = Cache.getAs[Map[String, String]]("session."+request.session.get("sessionid").get+".get").get
+      val requestedClaimsJson : JsObject = Cache.getAs[JsObject]("session."+request.session.get("sessionid").get).get
+      Logger.trace("json request = " + requestedClaimsJson)
+
+
+      val postForm : Option[Map[String, Seq[String]]] = request.body.asFormUrlEncoded
+      Logger.trace("post form = " + postForm)
+//
+//      redirectUri = request.getQueryString("redirect_uri").getOrElse("")
+//      val client = Client.findByClientId(request.getQueryString("client_id").getOrElse(""))
+//      if(client == None)
+//        throw OidcException("invalid_request", "no client")
+//
+//
+      var queryString : Map[String, Seq[String]] = Map()
+//      var responseTypes : Array[String] = (request.getQueryString("response_type").getOrElse("")).split(' ').filter(p => !p.isEmpty)
+//      if(responseTypes.isEmpty)
+//        throw OidcException("invalid_request", "no response types")
+//
+//      val scopes : Array[String] = request.getQueryString("scope").getOrElse("").split(' ').filter(p => !p.isEmpty)
+//      if(scopes.isEmpty)
+//        throw OidcException("invalid_request", "no scope")
+//      if(!scopes.contains("openid"))
+//        throw OidcException("invalid_scope", "no openid scope")
+//
+//      val state = request.getQueryString("state").getOrElse("")
+//      val nonce = request.getQueryString("nonce").getOrElse("")
+
+      val state = (requestedClaimsJson \ "state").asOpt[String].getOrElse("")
+      val nonce = (requestedClaimsJson \ "nonce").asOpt[String].getOrElse("")
+      redirectUri = (requestedClaimsJson \ "redirect_uri").asOpt[String].get
+      val client =  Client.findByClientId((requestedClaimsJson \ "client_id").asOpt[String].get)
+      if(client == None)
+        throw OidcException("invalid_request", "no client")
+
+      var responseTypes : Array[String] = ((requestedClaimsJson \ "response_type").asOpt[String].getOrElse("")).split(' ').filter(p => !p.isEmpty)
+      if(responseTypes.isEmpty)
+        throw OidcException("invalid_request", "no response types")
+
+      val scopes : Array[String] = (requestedClaimsJson \ "scope").asOpt[String].getOrElse("").split(' ').filter(p => !p.isEmpty)
+      if(scopes.isEmpty)
+        throw OidcException("invalid_request", "no scope")
+      if(!scopes.contains("openid"))
+        throw OidcException("invalid_scope", "no openid scope")
+
+      postForm.get("authorize")(0) match {
+        case "deny" =>  throw OidcException("access_denied", "User denied access")
+        case _ =>
+      }
+
+      var codeVal = ""
+      var tokenVal = ""
+
+
+//      val reqGet = request.queryString.map({case(x,y:Seq[String]) => x-> y.mkString(",")})
+//      val requestedClaimsJson = getRequestParamsAsJson(reqGet)
+
+      var allowedClaims : Seq[String] = getAllRequestedClaims(requestedClaimsJson)
+      if(responseTypes.contains("code")) {
+        //        codeVal = RandomStringUtils.randomAlphanumeric(20)
+        val codeInfo : JsObject = Token.create_token_info("alice", "Default", allowedClaims.toList, JsObject(reqGet.map({case(x,y) => (x, JsString(y))}).toSeq), requestedClaimsJson)
+        codeVal = (codeInfo \ "name").asOpt[String].get
+        val code = Token(0, 1, codeVal, Some(0), client.get.fields.get("client_id").asInstanceOf[Option[String]], None, Some(DateTime.now), Some(DateTime.now.plusDays(1)), Some(codeInfo.toString))
+        Token.insert(code)
+        queryString += "code" -> Seq(codeVal)
+      }
+
+      if(responseTypes.contains("token")) {
+        //        tokenVal = RandomStringUtils.randomAlphanumeric(20)
+        val tokenInfo : JsObject = Token.create_token_info("alice", "Default", allowedClaims.toList, JsObject(reqGet.map({case(x,y) => (x, JsString(y))}).toSeq), requestedClaimsJson)
+        tokenVal = (tokenInfo \ "name").asOpt[String].get
+        val token = Token(0, 1, tokenVal, Some(1), client.get.fields.get("client_id").asInstanceOf[Option[String]], None, Some(DateTime.now), Some(DateTime.now.plusDays(1)), Some(tokenInfo.toString))
+        Token.insert(token)
+        queryString += "access_token" -> Seq(tokenVal)
+      }
+
+      if(responseTypes.contains("id_token")) {
+        val cid : Option[String] = client.get.fields.get("client_id").asInstanceOf[Option[Option[String]]].get
+        val idTokenClaimsList = getIdTokenClaims((requestedClaimsJson).as[JsObject] )
+        Logger.trace("idtoken claims = " + idTokenClaimsList)
+        val persona = Persona.findByAccountPersona(user.get, "Default").get
+        val idTokenClaims : Map[String, Any] = idTokenClaimsList.filter(p => allowedClaims.contains(p)).map{ claimName =>
+          claimName match {
+            case "phone_number_verified" | "email_verified" => persona.fields.getOrElse(claimName, Some(0)).asInstanceOf[Option[Int]].get match {
+              case 0 => (claimName, false)
+              case 1 => (claimName, true)
+            }
+            //          case "address" => (claimName, new net.minidev.json.JSONObject().put("formatted", persona.fields.getOrElse(claimName, Some("")).asInstanceOf[Option[String]].get))
+            case "address" => val addressMap = new java.util.HashMap[String, java.lang.Object]; addressMap.put("formatted", persona.fields.getOrElse(claimName, Some("")).asInstanceOf[Option[String]].get);(claimName, addressMap)
+            case "updated_time" => (claimName, persona.fields.getOrElse(claimName, Some(DateTime.now)).asInstanceOf[Option[DateTime]].get)
+            case field : String => (field, persona.fields.getOrElse(field, Some("")).asInstanceOf[Option[String]].get)
+          }
+        }.toMap
+
+        val idTokenSignAlg : String = client.get.fields.get("id_token_signed_response_alg").asInstanceOf[Option[Option[String]]].get.getOrElse("RS256")
+        val hashAlg = "SHA-" + idTokenSignAlg.substring(2)
+        val hashBitLen : Int = idTokenSignAlg.substring(2).toInt
+        val hashLen =  hashBitLen / (8 * 2)
+        val md : MessageDigest = MessageDigest.getInstance(hashAlg)
+        var codeHash = ""
+        if(!codeVal.isEmpty)
+          codeHash = Base64URL.encode(md.digest(codeVal.getBytes).slice(0, hashLen)).toString
+        var accessTokenHash = ""
+        if(!tokenVal.isEmpty)
+          accessTokenHash = Base64URL.encode(md.digest(tokenVal.getBytes).slice(0, hashLen)).toString
+
+        val idt = getJWS(idTokenSignAlg, makeIdToken(user.get.login, cid.get, idTokenClaims, nonce, codeHash, accessTokenHash), client.get.fields.get("client_secret").asInstanceOf[Option[Option[String]]].get.get)
+        queryString += "id_token" -> Seq(idt )
+      }
+
+      if(!state.isEmpty)
+        queryString += "state" -> Seq(state)
+      val uri = new URI(redirectUri)
+      var queryParams = ""
+      var fragmentParams = ""
+      if(uri.getQuery != null)
+        queryParams = uri.getQuery
+      if(responseTypes.contains("token") || responseTypes.contains("id_token"))
+        fragmentParams = queryString.map{case(x,y) => x + "=" + y.mkString(",")}.mkString("&")
+      else {
+        if(!queryParams.isEmpty)
+          queryParams = queryParams + "&" + queryString.map{case(x,y) => x + "=" + y.mkString(",")}.mkString("&")
+        else
+          queryParams = queryString.map{case(x,y) => x + "=" + y.mkString(",")}.mkString("&")
+      }
+      val redirURL = URIUtils.createURI(uri.getScheme, uri.getHost, uri.getPort, uri.getPath, queryParams, fragmentParams)
+      Redirect(redirURL.toASCIIString)
+    }
+    catch {
+      case e : NoSuchElementException => {Logger.trace("NoSuchElementException" + e); sendError(redirectUri, "invalid_request") }
+      case e : OidcException => sendError(redirectUri, e.error, e.desc, e.error_uri, state, isQuery)
+      //      case unknown => { BadRequest("Unknown error")}
+      case e : Throwable => sendError(redirectUri, "unknown_error : " + e, e.getStackTraceString)
+    }
+
+  }
 
   def auth1 = Action { implicit request =>
     try {
