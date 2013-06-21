@@ -15,6 +15,8 @@ import play.api.data.Form
 import play.api.data.Forms._
 import scala.reflect.ClassTag
 import org.apache.commons.lang3.RandomStringUtils
+import org.joda.time.DateTime
+import org.joda.time.format.{ISODateTimeFormat, DateTimeFormat, DateTimeFormatter}
 
 object Application extends Controller with LoginLogout with AuthConfigImpl {
   
@@ -97,11 +99,17 @@ trait AuthConfigImpl extends AuthConfig {
 
   def loginSucceeded(request: RequestHeader) : Result = {
     val uri = request.session.get("access_uri").getOrElse(routes.Messages.main.url.toString)
-    Redirect(uri).withSession(request.session - "access_uri" + ("sessionid" -> RandomStringUtils.randomAlphabetic(20)))
-
+    val fmt : DateTimeFormatter = DateTimeFormat.forPattern("yyyyMMdd HHmmss z");
+    val sessionId =  RandomStringUtils.randomAlphabetic(20);
+    val sessionParams : Map[String, Any] = Map("auth_time"-> DateTime.now);
+    Cache.set("session." + sessionId, sessionParams)
+    Redirect(uri).withSession(request.session - "access_uri" + ("sessionid" -> sessionId) + ("login_time" -> DateTime.now.toString(ISODateTimeFormat.dateTime)))
   }
 
-  def logoutSucceeded(request: RequestHeader) = Redirect(routes.Application.login).withNewSession
+  def logoutSucceeded(request: RequestHeader) = {
+    Cache.remove("session." + request.session.get("sessionid").get)
+    Redirect(routes.Application.login).withNewSession
+  }
 
   def authenticationFailed(request: RequestHeader) = Redirect(routes.Application.login).withSession("access_uri" -> request.uri)
 

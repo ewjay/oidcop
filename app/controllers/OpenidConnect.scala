@@ -315,7 +315,7 @@ object OpenidConnect extends Controller with OptionalAuthElement with AuthConfig
   }
 
 
-  def getRequestParamsAsJson(req : Map[String, String]) : JsObject = {
+  def getRequestParamsAsJson(client : Client, req : Map[String, String]) : JsObject = {
     val specialKeys : Seq[String] = Seq("claims", "request", "requst_uri")
     val filtered : Map[String, String] = req.filterKeys(p => !specialKeys.contains(p))
 
@@ -333,7 +333,44 @@ object OpenidConnect extends Controller with OptionalAuthElement with AuthConfig
     if(!requestUri.isEmpty)
       request = getSSLURLContents(requestUri)
     if(!request.isEmpty){
+      val jwks_uri = client.fields("jwks_uri").asInstanceOf[Option[String]].get
+      Logger.trace("client fields = " + client.fields)
+      Logger.trace("client jwks_uri = " + jwks_uri)
+      val jwks : String = getSSLURLContents(client.fields("jwks_uri").asInstanceOf[Option[String]].get)
+      Logger.trace("jwks = " + jwks)
+      val jwkSet = JWKSet.parse(jwks)
+      Logger.trace("jwkset = " + jwkSet.toString)
+
       val joseObject : JOSEObject = JOSEObject.parse(request)
+      val joseHeader : ReadOnlyHeader = joseObject.getHeader
+      Logger.trace("header = " + joseHeader.toString + " type = " + joseHeader.getType)
+
+      if(joseHeader.getType != null && joseHeader.getType.equals(JOSEObjectType.JWE)) {
+        val jwe = joseObject.asInstanceOf[JWEObject]
+      }
+      if(joseObject.isInstanceOf[JWSObject]) {
+//      if(joseHeader.getType != null && joseHeader.getType.equals(JOSEObjectType.JWS)) {
+        val jws : JWSObject = joseObject.asInstanceOf[JWSObject]
+        val jwsHeader : JWSHeader = joseHeader.asInstanceOf[JWSHeader]
+
+        val reqObjectSignAlg = client.fields("request_object_signing_alg").asInstanceOf[Option[String]].getOrElse("none")
+        val jwsAlg : JWSAlgorithm = JWSAlgorithm.parse(reqObjectSignAlg)
+
+        val jwsVerifier = reqObjectSignAlg.substring(0,2) match {
+          case "HS" =>  new MACVerifier(client.fields("client_secret").asInstanceOf[Option[String]].get.getBytes)
+          case "RS" =>   {
+            val rsaPublicKey : RSAPublicKey = getJwkRsaSigKey(jwkSet, jwsHeader.getKeyID).get
+            val keyId = jwsHeader.getKeyID match {
+              case k: String => k
+              case _ => ""
+            }
+            new RSASSAVerifier(getJwkRsaSigKey(jwkSet, keyId).get)
+          }
+        }
+
+        val verified = jws.verify(jwsVerifier)
+        Logger.trace("Request object verified = " + verified)
+      }
       val payload : JsObject = Json.parse(joseObject.getPayload.toString).as[JsObject]
       Logger.trace("req payload = " + payload.toString)
       jsonParams = jsonParams ++ payload
@@ -379,7 +416,11 @@ object OpenidConnect extends Controller with OptionalAuthElement with AuthConfig
  }
 
   def getIdTokenClaims(req : JsObject) : Seq[String] = {
-    getRequestClaims(req, "id_token")
+    val idTokenClaims = getRequestClaims(req, "id_token")
+    ((req \ "max_age").asOpt[String].getOrElse("none")) match {
+      case "none"  => idTokenClaims
+      case maxAge : String => idTokenClaims :+ maxAge
+    }
   }
 
   def getAllRequestedClaims(req : JsObject) : Seq[String] = {
@@ -411,99 +452,124 @@ object OpenidConnect extends Controller with OptionalAuthElement with AuthConfig
 
       val state = request.getQueryString("state").getOrElse("")
       val nonce = request.getQueryString("nonce").getOrElse("")
+      val maxAge : Int = request.getQueryString("max_age").getOrElse(client.get.fields.get("default_max_age").asInstanceOf[Option[Option[Int]]].get.getOrElse(0).toString).toInt
+      Logger.trace("max_age = " + maxAge)
 
+//      val cacheParams : Map[String, Any] = Cache.getAs[Map[String, Any]]("session." +request.session.get("sessionid").get).getOrElse(Map())
+      val cacheParams : Map[String, Any] = Cache.getAs[Map[String, Any]]("session."+request.session.get("sessionid").get).getOrElse(Map())
+//      val requestedClaimsJson1 : JsObject = cacheParams("reqJson").asInstanceOf[JsObject]
+
+
+//      val authTime = DateTime.parse(cacheParams("auth_time"))
+      val authTime = cacheParams("auth_time").asInstanceOf[DateTime]
+      val minAuthTime = DateTime.now.minusSeconds(maxAge).withMillisOfSecond(0)
+      Logger.trace("auth time = " + authTime + "\nnow = " + DateTime.now + "\nmin auth time = " + minAuthTime)
+
+      if(maxAge > 0) {
+        if(minAuthTime.isAfter(authTime))
+          return authenticationFailed(request)
+      }
+
+      val cacheSessionId = "session." + request.session.get("sessionid").get
       val reqGet = request.queryString.map({case(x,y:Seq[String]) => x-> y.mkString(",")})
-      val requestedClaimsJson = getRequestParamsAsJson(reqGet)
+      val requestedClaimsJson = getRequestParamsAsJson(client.get, reqGet)
+      val sessionParams : Map[String, Any] = Cache.getAs[Map[String, Any]](cacheSessionId).getOrElse(Map())
 
-      Cache.set("session."+request.session.get("sessionid").get+".get", reqGet)
-      Cache.set("session."+request.session.get("sessionid").get, requestedClaimsJson)
+      val newSessionParams = sessionParams ++ Map("get"->reqGet, "reqJson" -> requestedClaimsJson)
+//      Cache.set("session."+request.session.get("sessionid").get+".get", reqGet)
+//      Cache.set("session."+request.session.get("sessionid").get, requestedClaimsJson)
+      Cache.set(cacheSessionId, newSessionParams)
 
       Logger.trace("sessionid = session." + request.session.get("sessionid").get)
       Logger.trace("setting json obj = " + requestedClaimsJson)
 
-      val requestedClaimsJson1 : JsObject = Cache.getAs[JsObject]("session."+request.session.get("sessionid").get).get
+//      val cacheParams : Map[String, Any] = Cache.getAs[Map[String, Any]](cacheSessionId).getOrElse(Map())
+//      val requestedClaimsJson1 : JsObject = Cache.getAs[JsObject]("session."+request.session.get("sessionid").get).get
+      val requestedClaimsJson1 : JsObject = newSessionParams("reqJson").asInstanceOf[JsObject]
       Logger.trace("json request = " + requestedClaimsJson1)
+      val requestedClaims : Seq[String] = getAllRequestedClaims(requestedClaimsJson)
+      return Ok(views.html.confirm(requestedClaims))
 
-      return Ok(views.html.confirm.render())
-
-      var codeVal = ""
-      var tokenVal = ""
-
-
-
-      var allowedClaims : Seq[String] = getAllRequestedClaims(requestedClaimsJson)
-      if(responseTypes.contains("code")) {
-//        codeVal = RandomStringUtils.randomAlphanumeric(20)
-        val codeInfo : JsObject = Token.create_token_info("alice", "Default", allowedClaims.toList, JsObject(reqGet.map({case(x,y) => (x, JsString(y))}).toSeq), requestedClaimsJson)
-        codeVal = (codeInfo \ "name").asOpt[String].get
-        val code = Token(0, 1, codeVal, Some(0), client.get.fields.get("client_id").asInstanceOf[Option[String]], None, Some(DateTime.now), Some(DateTime.now.plusDays(1)), Some(codeInfo.toString))
-        Token.insert(code)
-        queryString += "code" -> Seq(codeVal)
-      }
-
-      if(responseTypes.contains("token")) {
-//        tokenVal = RandomStringUtils.randomAlphanumeric(20)
-        val tokenInfo : JsObject = Token.create_token_info("alice", "Default", allowedClaims.toList, JsObject(reqGet.map({case(x,y) => (x, JsString(y))}).toSeq), requestedClaimsJson)
-        tokenVal = (tokenInfo \ "name").asOpt[String].get
-        val token = Token(0, 1, tokenVal, Some(1), client.get.fields.get("client_id").asInstanceOf[Option[String]], None, Some(DateTime.now), Some(DateTime.now.plusDays(1)), Some(tokenInfo.toString))
-        Token.insert(token)
-        queryString += "access_token" -> Seq(tokenVal)
-      }
-
-      if(responseTypes.contains("id_token")) {
-        val cid : Option[String] = client.get.fields.get("client_id").asInstanceOf[Option[Option[String]]].get
-        val idTokenClaimsList = getIdTokenClaims((requestedClaimsJson).as[JsObject] )
-        Logger.trace("idtoken claims = " + idTokenClaimsList)
-        val persona = Persona.findByAccountPersona(user.get, "Default").get
-        val idTokenClaims : Map[String, Any] = idTokenClaimsList.filter(p => allowedClaims.contains(p)).map{ claimName =>
-          claimName match {
-            case "phone_number_verified" | "email_verified" => persona.fields.getOrElse(claimName, Some(0)).asInstanceOf[Option[Int]].get match {
-              case 0 => (claimName, false)
-              case 1 => (claimName, true)
-            }
-            //          case "address" => (claimName, new net.minidev.json.JSONObject().put("formatted", persona.fields.getOrElse(claimName, Some("")).asInstanceOf[Option[String]].get))
-            case "address" => val addressMap = new java.util.HashMap[String, java.lang.Object]; addressMap.put("formatted", persona.fields.getOrElse(claimName, Some("")).asInstanceOf[Option[String]].get);(claimName, addressMap)
-            case "updated_time" => (claimName, persona.fields.getOrElse(claimName, Some(DateTime.now)).asInstanceOf[Option[DateTime]].get)
-            case field : String => (field, persona.fields.getOrElse(field, Some("")).asInstanceOf[Option[String]].get)
-          }
-        }.toMap
-
-        val idTokenSignAlg : String = client.get.fields.get("id_token_signed_response_alg").asInstanceOf[Option[Option[String]]].get.getOrElse("RS256")
-        val hashAlg = "SHA-" + idTokenSignAlg.substring(2)
-        val hashBitLen : Int = idTokenSignAlg.substring(2).toInt
-        val hashLen =  hashBitLen / (8 * 2)
-        val md : MessageDigest = MessageDigest.getInstance(hashAlg)
-        var codeHash = ""
-        if(!codeVal.isEmpty)
-          codeHash = Base64URL.encode(md.digest(codeVal.getBytes).slice(0, hashLen)).toString
-        var accessTokenHash = ""
-        if(!tokenVal.isEmpty)
-          accessTokenHash = Base64URL.encode(md.digest(tokenVal.getBytes).slice(0, hashLen)).toString
-
-        val idt = getJWS(idTokenSignAlg, makeIdToken(user.get.login, cid.get, idTokenClaims, nonce, codeHash, accessTokenHash), client.get.fields.get("client_secret").asInstanceOf[Option[Option[String]]].get.get)
-        queryString += "id_token" -> Seq(idt )
-      }
-
-      if(!state.isEmpty)
-        queryString += "state" -> Seq(state)
-      val uri = new URI(redirectUri)
-      var queryParams = ""
-      var fragmentParams = ""
-      if(uri.getQuery != null)
-        queryParams = uri.getQuery
-      if(responseTypes.contains("token") || responseTypes.contains("id_token"))
-        fragmentParams = queryString.map{case(x,y) => x + "=" + y.mkString(",")}.mkString("&")
-      else {
-        if(!queryParams.isEmpty)
-          queryParams = queryParams + "&" + queryString.map{case(x,y) => x + "=" + y.mkString(",")}.mkString("&")
-        else
-          queryParams = queryString.map{case(x,y) => x + "=" + y.mkString(",")}.mkString("&")
-      }
-      val redirURL = URIUtils.createURI(uri.getScheme, uri.getHost, uri.getPort, uri.getPath, queryParams, fragmentParams)
-      Redirect(redirURL.toASCIIString)
+//      var codeVal = ""
+//      var tokenVal = ""
+//
+//
+//
+//      var allowedClaims : Seq[String] = getAllRequestedClaims(requestedClaimsJson)
+//      if(responseTypes.contains("code")) {
+////        codeVal = RandomStringUtils.randomAlphanumeric(20)
+//        val codeInfo : JsObject = Token.create_token_info("alice", "Default", allowedClaims.toList, JsObject(reqGet.map({case(x,y) => (x, JsString(y))}).toSeq), requestedClaimsJson)
+//        codeVal = (codeInfo \ "name").asOpt[String].get
+//        val code = Token(0, 1, codeVal, Some(0), client.get.fields.get("client_id").asInstanceOf[Option[String]], None, Some(DateTime.now), Some(DateTime.now.plusDays(1)), Some(codeInfo.toString))
+//        Token.insert(code)
+//        queryString += "code" -> Seq(codeVal)
+//      }
+//
+//      if(responseTypes.contains("token")) {
+////        tokenVal = RandomStringUtils.randomAlphanumeric(20)
+//        val tokenInfo : JsObject = Token.create_token_info("alice", "Default", allowedClaims.toList, JsObject(reqGet.map({case(x,y) => (x, JsString(y))}).toSeq), requestedClaimsJson)
+//        tokenVal = (tokenInfo \ "name").asOpt[String].get
+//        val token = Token(0, 1, tokenVal, Some(1), client.get.fields.get("client_id").asInstanceOf[Option[String]], None, Some(DateTime.now), Some(DateTime.now.plusDays(1)), Some(tokenInfo.toString))
+//        Token.insert(token)
+//        queryString += "access_token" -> Seq(tokenVal)
+//      }
+//
+//      if(responseTypes.contains("id_token")) {
+//        if(nonce == "")
+//          throw OidcException("invalid_request", "no nonce value for request with id_token response_type")
+//        val cid : Option[String] = client.get.fields.get("client_id").asInstanceOf[Option[Option[String]]].get
+//        val idTokenClaimsList = getIdTokenClaims((requestedClaimsJson).as[JsObject] )
+//        Logger.trace("idtoken claims = " + idTokenClaimsList)
+//        val persona = Persona.findByAccountPersona(user.get, "Default").get
+//        val idTokenClaims : Map[String, Any] = idTokenClaimsList.filter(p => allowedClaims.contains(p)).map{ claimName =>
+//          claimName match {
+//            case "phone_number_verified" | "email_verified" => persona.fields.getOrElse(claimName, Some(0)).asInstanceOf[Option[Int]].get match {
+//              case 0 => (claimName, false)
+//              case 1 => (claimName, true)
+//            }
+//            //          case "address" => (claimName, new net.minidev.json.JSONObject().put("formatted", persona.fields.getOrElse(claimName, Some("")).asInstanceOf[Option[String]].get))
+//            case "address" => val addressMap = new java.util.HashMap[String, java.lang.Object]; addressMap.put("formatted", persona.fields.getOrElse(claimName, Some("")).asInstanceOf[Option[String]].get);(claimName, addressMap)
+//            case "updated_time" => (claimName, persona.fields.getOrElse(claimName, Some(DateTime.now)).asInstanceOf[Option[DateTime]].get)
+//            case field : String => (field, persona.fields.getOrElse(field, Some("")).asInstanceOf[Option[String]].get)
+//          }
+//        }.toMap
+//
+//        val idTokenSignAlg : String = client.get.fields.get("id_token_signed_response_alg").asInstanceOf[Option[Option[String]]].get.getOrElse("RS256")
+//        val hashAlg = "SHA-" + idTokenSignAlg.substring(2)
+//        val hashBitLen : Int = idTokenSignAlg.substring(2).toInt
+//        val hashLen =  hashBitLen / (8 * 2)
+//        val md : MessageDigest = MessageDigest.getInstance(hashAlg)
+//        var codeHash = ""
+//        if(!codeVal.isEmpty)
+//          codeHash = Base64URL.encode(md.digest(codeVal.getBytes).slice(0, hashLen)).toString
+//        var accessTokenHash = ""
+//        if(!tokenVal.isEmpty)
+//          accessTokenHash = Base64URL.encode(md.digest(tokenVal.getBytes).slice(0, hashLen)).toString
+//
+//        val idt = getJWS(idTokenSignAlg, makeIdToken(user.get.login, cid.get, idTokenClaims, nonce, codeHash, accessTokenHash), client.get.fields.get("client_secret").asInstanceOf[Option[Option[String]]].get.get)
+//        queryString += "id_token" -> Seq(idt )
+//      }
+//
+//      if(!state.isEmpty)
+//        queryString += "state" -> Seq(state)
+//      val uri = new URI(redirectUri)
+//      var queryParams = ""
+//      var fragmentParams = ""
+//      if(uri.getQuery != null)
+//        queryParams = uri.getQuery
+//      if(responseTypes.contains("token") || responseTypes.contains("id_token"))
+//        fragmentParams = queryString.map{case(x,y) => x + "=" + y.mkString(",")}.mkString("&")
+//      else {
+//        if(!queryParams.isEmpty)
+//          queryParams = queryParams + "&" + queryString.map{case(x,y) => x + "=" + y.mkString(",")}.mkString("&")
+//        else
+//          queryParams = queryString.map{case(x,y) => x + "=" + y.mkString(",")}.mkString("&")
+//      }
+//      val redirURL = URIUtils.createURI(uri.getScheme, uri.getHost, uri.getPort, uri.getPath, queryParams, fragmentParams)
+//      Redirect(redirURL.toASCIIString)
     }
     catch {
-      case e : NoSuchElementException => { sendError(redirectUri, "invalid_request") }
+      case e : NoSuchElementException => { sendError(redirectUri, "invalid_request", e.toString) }
       case e : OidcException => sendError(redirectUri, e.error, e.desc, e.error_uri, state, isQuery)
 //      case unknown => { BadRequest("Unknown error")}
       case e : Throwable => sendError(redirectUri, "unknown_error : " + e, e.getStackTraceString)
@@ -524,8 +590,12 @@ object OpenidConnect extends Controller with OptionalAuthElement with AuthConfig
     try {
 
       Logger.trace("sessionid = session." + request.session.get("sessionid").get)
-      val reqGet : Map[String, String] = Cache.getAs[Map[String, String]]("session."+request.session.get("sessionid").get+".get").get
-      val requestedClaimsJson : JsObject = Cache.getAs[JsObject]("session."+request.session.get("sessionid").get).get
+      val cacheParams : Map[String, Any] = Cache.getAs[Map[String, Any]]("session."+request.session.get("sessionid").get).getOrElse(Map())
+      val reqGet : Map[String, String] = cacheParams("get").asInstanceOf[Map[String, String]]
+      val requestedClaimsJson : JsObject = cacheParams("reqJson").asInstanceOf[JsObject] ++ Json.obj("sessionid"->request.session.get("sessionid").get)
+
+//      val reqGet : Map[String, String] = Cache.getAs[Map[String, String]]("session."+request.session.get("sessionid").get+".get").get
+//      val requestedClaimsJson : JsObject = Cache.getAs[JsObject]("session."+request.session.get("sessionid").get).get
       Logger.trace("json request = " + requestedClaimsJson)
 
 
@@ -574,6 +644,11 @@ object OpenidConnect extends Controller with OptionalAuthElement with AuthConfig
         case _ =>
       }
 
+      postForm.get("trust")(0) match {
+        case "always" =>
+        case _ =>
+      }
+
       var codeVal = ""
       var tokenVal = ""
 
@@ -614,6 +689,7 @@ object OpenidConnect extends Controller with OptionalAuthElement with AuthConfig
             //          case "address" => (claimName, new net.minidev.json.JSONObject().put("formatted", persona.fields.getOrElse(claimName, Some("")).asInstanceOf[Option[String]].get))
             case "address" => val addressMap = new java.util.HashMap[String, java.lang.Object]; addressMap.put("formatted", persona.fields.getOrElse(claimName, Some("")).asInstanceOf[Option[String]].get);(claimName, addressMap)
             case "updated_time" => (claimName, persona.fields.getOrElse(claimName, Some(DateTime.now)).asInstanceOf[Option[DateTime]].get)
+            case "auth_time" => (claimName, cacheParams("auth_time").asInstanceOf[DateTime].getMillis)
             case field : String => (field, persona.fields.getOrElse(field, Some("")).asInstanceOf[Option[String]].get)
           }
         }.toMap
@@ -853,7 +929,8 @@ object OpenidConnect extends Controller with OptionalAuthElement with AuthConfig
               val jwkSet = JWKSet.parse(jwks)
               Logger.trace("jwkset = " + jwkSet.toString)
               Logger.trace("jws header = " + jwsHeader.toString)
-              true
+              val jwsVerifier : JWSVerifier = new RSASSAVerifier(getJwkRsaSigKey(jwkSet, jwsHeader.getKeyID).get)
+              jwsObject.verify(jwsVerifier)
               // val jwsVerifier : JWSVerifier = new RSASSAVerifier()(c.fields("client_secret").asInstanceOf[Option[String]].get.getBytes)
               // jwsObject.verify(jwsVerifier)
             }
@@ -900,6 +977,9 @@ object OpenidConnect extends Controller with OptionalAuthElement with AuthConfig
       Logger.trace("idtoken claims = " + idTokenClaimsList)
       val persona = Persona.findByAccountPersona(account, (jsonReq \ "p").asOpt[String].getOrElse("Default")).get
       val allowedClaims : Seq[String] = (jsonReq \ "l").as[Seq[String]]
+      val cacheParams : Map[String, Any] = Cache.getAs[Map[String, Any]]("session."+(jsonReq \ "r" \ "sessionid").as[String]).getOrElse(Map())
+
+      Logger.trace("cache param auth_time = " + cacheParams("auth_time").asInstanceOf[DateTime].getMillis + " " + cacheParams("auth_time").asInstanceOf[DateTime])
       val idTokenClaims : Map[String, Any] = idTokenClaimsList.filter(p=> allowedClaims.contains(p)).map{ claimName =>
         claimName match {
           case "phone_number_verified" | "email_verified" => persona.fields.getOrElse(claimName, Some(0)).asInstanceOf[Option[Int]].get match {
@@ -909,6 +989,7 @@ object OpenidConnect extends Controller with OptionalAuthElement with AuthConfig
 //          case "address" => (claimName, new net.minidev.json.JSONObject().put("formatted", persona.fields.getOrElse(claimName, Some("")).asInstanceOf[Option[String]].get))
           case "address" => val addressMap = new java.util.HashMap[String, java.lang.Object]; addressMap.put("formatted", persona.fields.getOrElse(claimName, Some("")).asInstanceOf[Option[String]].get);(claimName, addressMap)
           case "updated_time" => (claimName, persona.fields.getOrElse(claimName, Some(DateTime.now)).asInstanceOf[Option[DateTime]].get)
+          case "auth_time" => ("auth_time", cacheParams("auth_time").asInstanceOf[DateTime].getMillis)
           case field : String => (field, persona.fields.getOrElse(field, Some("")).asInstanceOf[Option[String]].get)
         }
       }.toMap
@@ -1414,6 +1495,162 @@ object OpenidConnect extends Controller with OptionalAuthElement with AuthConfig
     }
   }
 
+  /*
+
+  function jwk_get_keys($jwk, $kty = 'RSA', $use = NULL, $kid = NULL) {
+    if(is_string($jwk))
+        $json = json_decode($jwk, true);
+    else
+        $json = $jwk;
+    if(!isset($json['keys']))
+        return NULL;
+    if(!count($json['keys']))
+        return NULL;
+    $foundkeys = array();
+    foreach($json['keys'] as $key) {
+        if(!strcmp($key['kty'], $kty)) {
+            $foundkeys[] = $key;
+        }
+    }
+    if(!count($foundkeys))
+        return NULL;
+    if($use) {
+        $temp = array();
+        foreach($foundkeys as $key) {
+            if(!$key['use'])
+                $temp[] = $key;
+            elseif(!strcmp($key['use'], $use))
+                array_unshift($temp, $key);
+        }
+        $foundkeys = $temp;
+    }
+    if(!count($foundkeys))
+        return NULL;
+    if($kid) {
+        $temp = array();
+        foreach($foundkeys as $key) {
+            if(!strcmp($key['kid'], $kid))
+                $temp[] = $key;
+        }
+        $foundkeys = $temp;
+    }
+    return $foundkeys;
+}
+
+function jwk_get_rsa_use_key($jwk, $use = NULL, $kid = NULL) {
+    $is_cert = false;
+    $keys = jwk_get_keys($jwk, 'RSA', $use, $kid);
+    if(!count($keys)) {
+        $keys = jwk_get_keys($jwk, 'PKIX', $use, $kid);
+        $is_cert = true;
+    }
+    if(!count($keys)) {
+        return NULL;
+    }
+    $rsa_key = $keys[0];
+//    foreach($keys as $key) {
+//        if(!strcmp($key['use'], $use)) {
+//            $rsa_key = $key;
+//            break;
+//        }
+//    }
+    $rsa = NULL;
+//    if(!$rsa_key)
+//        $rsa_key = $keys[0];
+    if($rsa_key) {
+//        printf("use key = ");
+//        print_r($rsa_key);
+        if($is_cert) {
+            $key_contents = "-----BEGIN CERTIFICATE-----\n" . $rsa_key['x5c'][0] . "\n-----END CERTIFICATE-----\n";
+            error_log("using PKIX = " . print_r($rsa_key, true));
+            $key = openssl_pkey_get_public($key_contents);
+            if($key) {
+                $details = openssl_pkey_get_details($key);
+                $pubkey = $details['key'];
+                $rsa = new Crypt_RSA();
+                if(!$rsa->loadkey($pubkey, CRYPT_RSA_PUBLIC_FORMAT_PKCS1))
+                    return false;
+            }
+
+        } else {
+            if(isset($rsa_key['n']) && isset($rsa_key['e'])) {
+                error_log("using JWK = " . print_r($rsa_key, true));
+                $modulus = new Math_BigInteger('0x' . bin2hex(base64url_decode($rsa_key['n'])), 16);
+                $exponent = new Math_BigInteger('0x' . bin2hex(base64url_decode($rsa_key['e'])), 16);
+                $rsa = new Crypt_RSA();
+                $rsa->modulus = $modulus;
+                $rsa->exponent = $exponent;
+                $rsa->publicExponent = $exponent;
+                $rsa->k = strlen($rsa->modulus->toBytes());
+            }
+        }
+    }
+    return $rsa;
+}
+
+function jwk_get_rsa_sig_key($jwk, $kid = NULL) {
+    return jwk_get_rsa_use_key($jwk, 'sig', $kid);
+}
+
+function jwk_get_rsa_enc_key($jwk, $kid = NULL) {
+    return jwk_get_rsa_use_key($jwk, 'enc', $kid);
+}
+
+   */
+
+
+  def getJwkKeys(jwkSet : JWKSet, kty : KeyType, use : String = "", kid : String = "") : Array[JWK] = {
+    var jwkList : Array[JWK] =  jwkSet.getKeys.toArray( new Array[JWK](jwkSet.getKeys.size))
+    jwkList = jwkList.filter(jwk => jwk.getKeyType.equals(kty))
+    val unspecifiedKeys = jwkList.filter(jwk => jwk.getKeyUse == null)
+    val sigKeys = jwkList.filter(jwk=> if(jwk.getKeyUse != null) jwk.getKeyUse.equals(Use.SIGNATURE) else false)
+    val encKeys = jwkList.filter(jwk=> if(jwk.getKeyUse != null) jwk.getKeyUse.equals(Use.ENCRYPTION) else false)
+
+    Logger.trace("unspecified keys = " + unspecifiedKeys)
+    unspecifiedKeys.foreach{k => Logger.trace(k.toJSONString)}
+    Logger.trace("sig keys = " + sigKeys)
+    sigKeys.foreach{k => Logger.trace(k.toJSONString)}
+    Logger.trace("enc keys = " + encKeys)
+    encKeys.foreach{k => Logger.trace(k.toJSONString)}
+
+
+    if(!use.isEmpty) {
+      jwkList = use match {
+      case "sig" => sigKeys ++ unspecifiedKeys
+      case "enc" => encKeys ++ unspecifiedKeys
+      }
+    }
+
+    if(!kid.isEmpty){
+      jwkList = jwkList.filter(jwk => {
+        if(jwk.getKeyID != null)
+          jwk.getKeyID.equals(kid)
+        else false
+      })
+    }
+    jwkList
+  }
+
+  def getJwkRsaSigKey(jwkSet : JWKSet, kid : String = "") : Option[RSAPublicKey] = {
+    val keys : Array[JWK] = getJwkKeys(jwkSet, KeyType.RSA, "sig", kid)
+    Logger.trace("RSA sig keys = " + keys)
+    keys.foreach{k => Logger.trace(k.toJSONString)}
+    if(keys.isEmpty)
+      None
+    else
+      Some(keys(0).asInstanceOf[RSAKey].toRSAPublicKey)
+  }
+
+  def getJwkRsaEncKey(jwkSet : JWKSet, kid : String = "") : Option[RSAPublicKey] = {
+    val keys : Array[JWK] = getJwkKeys(jwkSet, KeyType.RSA, "enc", kid)
+    Logger.trace("RSA enc keys = " + keys)
+    keys.foreach{k => Logger.trace(k.toJSONString)}
+    if(keys.isEmpty)
+      None
+    else
+      Some(keys(0).asInstanceOf[RSAKey].toRSAPublicKey)
+  }
+
   def jwkTest = Action { implicit request =>
 
     try {
@@ -1428,17 +1665,53 @@ object OpenidConnect extends Controller with OptionalAuthElement with AuthConfig
 
 //      val rsaMultiPrimePrivateCrtKeySpec : RSAMultiPrimePrivateCrtKeySpec = new RSAMultiPrimePrivateCrtKeySpec(opPrivatekey.getModulus, opPrivatekey.get)
 
-      val rsaOPKey = new RSAKey(opPublicKey, opPrivatekey, null, null, null)
-      val rsaRPKey = new RSAKey(rpPublicKey, rpPrivatekey, null, null, null)
-
+      val rsaOPKey = new RSAKey(opPublicKey, opPrivatekey.asInstanceOf[RSAPrivateKey], null, null, null,null, null, null)
+      val rsaRPKey = new RSAKey(rpPublicKey, rpPrivatekey.asInstanceOf[RSAPrivateKey], null, null, null,null, null, null)
 
       val jwkString = "OP JWK :\n" + rsaOPKey.toJSONString + "\nRP JWK :\n" + rsaRPKey.toJSONString
       Logger.trace(jwkString)
 
+      val jwk = getFileContents("/home/edmund/work/oidcop/public/keys/jwktest.jwk")
+      Logger.trace("jwk = " + jwk)
+
+      val jwkSet : JWKSet = JWKSet.parse(jwk)
+      val keyList : java.util.List[JWK] = jwkSet.getKeys()
+      val it : java.util.Iterator[JWK] = keyList.iterator()
+      while(it.hasNext){
+        val jwkKey : JWK = it.next()
+        Logger.trace("jwk key = " + jwkKey.toJSONString)
+        if(jwkKey.getAlgorithm != null)
+          Logger.trace("alg = " + jwkKey.getAlgorithm.toString + "\n")
+        if(jwkKey.getKeyID != null)
+          Logger.trace("keyId" + jwkKey.getKeyID + "\n" )
+        if(jwkKey.getKeyType != null)
+          Logger.trace("type" + jwkKey.getKeyType.toString + "\n" )
+        if(jwkKey.getKeyUse != null)
+          Logger.trace("use" + jwkKey.getKeyUse.name() + "\n" )
+        Logger.trace("key" + jwkKey.asInstanceOf[RSAKey].toRSAPublicKey.toString + "\n")
+//          "keyId" + jwkKey.getKeyID + "\n" +
+//          "keyId" + jwkKey.getKeyID + "\n" +
+//          "keyId" + jwkKey.getKeyID + "\n"
+      }
+
+      Logger.trace("key")
+
+      val sigKey = getJwkRsaSigKey(jwkSet)
+      Logger.trace("############sig keys = " + sigKey)
+
+      val sigKey1 = getJwkRsaSigKey(jwkSet, "key03")
+      Logger.trace("############sig keys 1= " + sigKey1)
+
+      val encKey1 = getJwkRsaEncKey(jwkSet, "key03")
+      Logger.trace("############enc keys 1= " + encKey1)
+
+      val encKey2 = getJwkRsaEncKey(jwkSet, "key04")
+      Logger.trace("############enc keys 2 = " + encKey2)
+
       Ok(jwkString).as(TEXT)
     }
     catch {
-      case e : Throwable => {BadRequest(e.toString)}
+      case e : Throwable => {BadRequest(e.toString + "\n" + e.getStackTraceString)}
     }
   }
 
