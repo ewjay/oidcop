@@ -42,6 +42,7 @@ import scala.sys.process
 import org.apache.commons.lang3.RandomStringUtils
 import java.sql.Timestamp
 import utils._
+import com.nimbusds.jose
 
 
 /**
@@ -341,39 +342,54 @@ object OpenidConnect extends Controller with OptionalAuthElement with AuthConfig
       val jwkSet = JWKSet.parse(jwks)
       Logger.trace("jwkset = " + jwkSet.toString)
 
-      val joseObject : JOSEObject = JOSEObject.parse(request)
-      val joseHeader : ReadOnlyHeader = joseObject.getHeader
+      var joseObject : JOSEObject = JOSEObject.parse(request)
+      var joseHeader : ReadOnlyHeader = joseObject.getHeader
       Logger.trace("header = " + joseHeader.toString + " type = " + joseHeader.getType)
 
-      if(joseHeader.getType != null && joseHeader.getType.equals(JOSEObjectType.JWE)) {
-        val jwe = joseObject.asInstanceOf[JWEObject]
+      val sig : String  =  client.fields("request_object_signing_alg").asInstanceOf[Option[String]].getOrElse("")
+      val clientSecret : String  =  client.fields("client_secret").asInstanceOf[Option[String]].getOrElse("")
+
+//      if(joseObject.isInstanceOf[JWSObject]) {
+////      if(joseHeader.getType != null && joseHeader.getType.equals(JOSEObjectType.JWS)) {
+//        val jws : JWSObject = joseObject.asInstanceOf[JWSObject]
+//        val jwsHeader : JWSHeader = joseHeader.asInstanceOf[JWSHeader]
+//
+//        val reqObjectSignAlg = client.fields("request_object_signing_alg").asInstanceOf[Option[String]].getOrElse("none")
+//        val jwsAlg : JWSAlgorithm = JWSAlgorithm.parse(reqObjectSignAlg)
+//
+//        val jwsVerifier = reqObjectSignAlg.substring(0,2) match {
+//          case "HS" =>  new MACVerifier(client.fields("client_secret").asInstanceOf[Option[String]].get.getBytes)
+//          case "RS" =>   {
+//            val keyId = jwsHeader.getKeyID match {
+//              case k: String => k
+//              case _ => ""
+//            }
+//            new RSASSAVerifier(getJwkRsaSigKey(jwkSet, keyId).get)
+//          }
+//        }
+//
+//        val verified = jws.verify(jwsVerifier)
+//        Logger.trace("Request object verified = " + verified)
+//      }
+
+      if(joseObject.isInstanceOf[JWEObject]) {
+        request = decryptJWE(request)
+        if(!request.isEmpty) {
+          joseObject = JOSEObject.parse(request)
+          joseHeader = joseObject.getHeader
+          Logger.trace("header = " + joseHeader.toString + " type = " + joseHeader.getType)
+        }
       }
       if(joseObject.isInstanceOf[JWSObject]) {
-//      if(joseHeader.getType != null && joseHeader.getType.equals(JOSEObjectType.JWS)) {
-        val jws : JWSObject = joseObject.asInstanceOf[JWSObject]
-        val jwsHeader : JWSHeader = joseHeader.asInstanceOf[JWSHeader]
-
-        val reqObjectSignAlg = client.fields("request_object_signing_alg").asInstanceOf[Option[String]].getOrElse("none")
-        val jwsAlg : JWSAlgorithm = JWSAlgorithm.parse(reqObjectSignAlg)
-
-        val jwsVerifier = reqObjectSignAlg.substring(0,2) match {
-          case "HS" =>  new MACVerifier(client.fields("client_secret").asInstanceOf[Option[String]].get.getBytes)
-          case "RS" =>   {
-            val rsaPublicKey : RSAPublicKey = getJwkRsaSigKey(jwkSet, jwsHeader.getKeyID).get
-            val keyId = jwsHeader.getKeyID match {
-              case k: String => k
-              case _ => ""
-            }
-            new RSASSAVerifier(getJwkRsaSigKey(jwkSet, keyId).get)
-          }
+        val verified = verifyJWS(request, sig,clientSecret, jwkSet)
+        if(verified) {
+          val payload : JsObject = Json.parse(joseObject.getPayload.toString).as[JsObject]
+          Logger.trace("req payload = " + payload.toString)
+          jsonParams = jsonParams ++ payload
+        } else {
+          jsonParams = Json.obj()
         }
-
-        val verified = jws.verify(jwsVerifier)
-        Logger.trace("Request object verified = " + verified)
       }
-      val payload : JsObject = Json.parse(joseObject.getPayload.toString).as[JsObject]
-      Logger.trace("req payload = " + payload.toString)
-      jsonParams = jsonParams ++ payload
     }
     Logger.trace("final req = " + jsonParams.toString)
 
@@ -387,7 +403,7 @@ object OpenidConnect extends Controller with OptionalAuthElement with AuthConfig
     val json : Option[JsObject] = (req \ "claims" \ subKey).asOpt[JsObject]
 
     json match {
-      case None => Seq("")
+      case None => Seq()
       case Some(_) => {
         json.get.keys.toSeq
       }
@@ -408,11 +424,12 @@ object OpenidConnect extends Controller with OptionalAuthElement with AuthConfig
        scopeClaims = scopeClaims ++ Seq("phone_number", "phone_number_verified")
    }
    val userInfoClaims : Seq[String] = getRequestClaims(req, "userinfo")
-   Logger.trace("scope claims = " + scopeClaims)
-   Logger.trace("userinfo claims = " + userInfoClaims)
-   Logger.trace("all claims = " + (scopeClaims ++ userInfoClaims).toSeq)
+   Logger.trace("scope claims = " + scopeClaims + " count : " + scopeClaims.length)
+   Logger.trace("userinfo claims = " + userInfoClaims + " count : " + userInfoClaims.length)
+   val allClaims : Seq[String] = (scopeClaims ++ userInfoClaims).toSet.toSeq
+   Logger.trace("all claims = " + allClaims + " count : " + allClaims.length)
 
-   (scopeClaims ++ userInfoClaims).toSet.toSeq
+   allClaims
  }
 
   def getIdTokenClaims(req : JsObject) : Seq[String] = {
@@ -694,9 +711,14 @@ object OpenidConnect extends Controller with OptionalAuthElement with AuthConfig
           }
         }.toMap
 
-        val idTokenSignAlg : String = client.get.fields.get("id_token_signed_response_alg").asInstanceOf[Option[Option[String]]].get.getOrElse("RS256")
-        val hashAlg = "SHA-" + idTokenSignAlg.substring(2)
-        val hashBitLen : Int = idTokenSignAlg.substring(2).toInt
+        val sig : String = client.get.fields("id_token_signed_response_alg").asInstanceOf[Option[String]].getOrElse("")
+        val alg : String = client.get.fields("id_token_encrypted_response_alg").asInstanceOf[Option[String]].getOrElse("")
+        val enc : String = client.get.fields("id_token_encrypted_response_enc").asInstanceOf[Option[String]].getOrElse("")
+        val jwksUri : String = client.get.fields("jwks_uri").asInstanceOf[Option[String]].getOrElse("")
+        val clientSecret : String = client.get.fields("client_secret").asInstanceOf[Option[String]].getOrElse("")
+
+        val hashAlg = "SHA-" + sig.substring(2)
+        val hashBitLen : Int = sig.substring(2).toInt
         val hashLen =  hashBitLen / (8 * 2)
         val md : MessageDigest = MessageDigest.getInstance(hashAlg)
         var codeHash = ""
@@ -705,8 +727,7 @@ object OpenidConnect extends Controller with OptionalAuthElement with AuthConfig
         var accessTokenHash = ""
         if(!tokenVal.isEmpty)
           accessTokenHash = Base64URL.encode(md.digest(tokenVal.getBytes).slice(0, hashLen)).toString
-
-        val idt = getJWS(idTokenSignAlg, makeIdToken(user.get.login, cid.get, idTokenClaims, nonce, codeHash, accessTokenHash), client.get.fields.get("client_secret").asInstanceOf[Option[Option[String]]].get.get)
+        val idt = signEncrypt(makeIdToken(user.get.login, cid.get, idTokenClaims, nonce, codeHash, accessTokenHash), sig, alg, enc, jwksUri, clientSecret)
         queryString += "id_token" -> Seq(idt )
       }
 
@@ -929,7 +950,11 @@ object OpenidConnect extends Controller with OptionalAuthElement with AuthConfig
               val jwkSet = JWKSet.parse(jwks)
               Logger.trace("jwkset = " + jwkSet.toString)
               Logger.trace("jws header = " + jwsHeader.toString)
-              val jwsVerifier : JWSVerifier = new RSASSAVerifier(getJwkRsaSigKey(jwkSet, jwsHeader.getKeyID).get)
+              val keyId = jwsHeader.getKeyID match {
+                case k: String => k
+                case _ => ""
+              }
+              val jwsVerifier : JWSVerifier = new RSASSAVerifier(getJwkRsaSigKey(jwkSet, keyId).get)
               jwsObject.verify(jwsVerifier)
               // val jwsVerifier : JWSVerifier = new RSASSAVerifier()(c.fields("client_secret").asInstanceOf[Option[String]].get.getBytes)
               // jwsObject.verify(jwsVerifier)
@@ -994,16 +1019,23 @@ object OpenidConnect extends Controller with OptionalAuthElement with AuthConfig
         }
       }.toMap
 
+      val sig : String = client.fields("id_token_signed_response_alg").asInstanceOf[Option[String]].getOrElse("")
+      val alg : String = client.fields("id_token_encrypted_response_alg").asInstanceOf[Option[String]].getOrElse("")
+      val enc : String = client.fields("id_token_encrypted_response_enc").asInstanceOf[Option[String]].getOrElse("")
+      val jwksUri : String = client.fields("jwks_uri").asInstanceOf[Option[String]].getOrElse("")
+      val clientSecret : String = client.fields("client_secret").asInstanceOf[Option[String]].getOrElse("")
+
       val idTokenSignAlg : String = client.fields.get("id_token_signed_response_alg").asInstanceOf[Option[Option[String]]].get.getOrElse("RS256")
-      val hashAlg = "SHA-" + idTokenSignAlg.substring(2)
-      val hashBitLen : Int = idTokenSignAlg.substring(2).toInt
+      val hashAlg = "SHA-" + sig.substring(2)
+      val hashBitLen : Int = sig.substring(2).toInt
       val hashLen =  hashBitLen / (8 * 2)
       val md : MessageDigest = MessageDigest.getInstance(hashAlg)
       val codeHash = Base64URL.encode(md.digest(code.getBytes).slice(0, hashLen)).toString
       val accessTokenHash = Base64URL.encode(md.digest(dbToken.token.getBytes).slice(0, hashLen)).toString
+
       val jsonResponse = Json.obj(
         "access_token" -> dbToken.token,
-        "id_token" -> getJWS(idTokenSignAlg, makeIdToken(account.login, dbToken.client.get, idTokenClaims,(jsonReq \ "r" \ "nonce").asOpt[String].getOrElse(""), codeHash, accessTokenHash), client.fields.get("client_secret").asInstanceOf[Option[Option[String]]].get.get),
+        "id_token" -> signEncrypt(makeIdToken(account.login, dbToken.client.get, idTokenClaims,(jsonReq \ "r" \ "nonce").asOpt[String].getOrElse(""), codeHash, accessTokenHash), sig, alg, enc, jwksUri, clientSecret),
         "token_type" -> "bearer",
         "expires_in" -> 3600
       )
@@ -1058,7 +1090,18 @@ object OpenidConnect extends Controller with OptionalAuthElement with AuthConfig
 
       val jsonClaims = Json.obj(returnClaims.toSeq:_*)
 
-      Ok(Json.prettyPrint(jsonClaims)).as(JSON)
+      val sig : String = client.fields("userinfo_signed_response_alg").asInstanceOf[Option[String]].getOrElse("")
+      val alg : String = client.fields("userinfo_encrypted_response_alg").asInstanceOf[Option[String]].getOrElse("")
+      val enc : String = client.fields("userinfo_encrypted_response_enc").asInstanceOf[Option[String]].getOrElse("")
+      val jwksUri : String = client.fields("jwks_uri").asInstanceOf[Option[String]].getOrElse("")
+      val clientSecret : String = client.fields("client_secret").asInstanceOf[Option[String]].getOrElse("")
+
+      if(sig.isEmpty)
+        Ok(Json.prettyPrint(jsonClaims)).as(JSON)
+      else {
+        val jwt = signEncrypt(jsonClaims.toString, sig, alg, enc, jwksUri, clientSecret)
+        Ok(jwt).as("application/jwt")
+      }
 
 
     }
@@ -1193,7 +1236,33 @@ object OpenidConnect extends Controller with OptionalAuthElement with AuthConfig
     jwtClaims.toJSONObject.toJSONString
   }
 
+  def getJWE(alg : String, enc : String, jwksUri : String, payload:String) : String = {
+    var jwe : String = ""
+    if(!alg.isEmpty && !enc.isEmpty && !jwksUri.isEmpty && !payload.isEmpty) {
+      val jwks : String = getSSLURLContents(jwksUri)
+      val jwkSet = JWKSet.parse(jwks)
+
+      val enckeys : Array[JWK] = getJwkKeys(jwkSet, KeyType.RSA, "enc")
+      if(!enckeys.isEmpty) {
+        val jweAlg = JWEAlgorithm.parse(alg)
+        val jweEnc = EncryptionMethod.parse(enc)
+        val jweHeader = new JWEHeader(jweAlg, jweEnc)
+
+        val rsaKey : RSAPublicKey = enckeys(0).asInstanceOf[RSAKey].toRSAPublicKey
+        if(enckeys(0).getKeyID != null)
+          jweHeader.setKeyID(enckeys(0).getKeyID)
+        val jweEncrypter : JWEEncrypter = new RSAEncrypter(rsaKey)
+        val jweObject : JWEObject = new JWEObject(jweHeader, new jose.Payload(payload))
+        jweObject.encrypt(jweEncrypter)
+        jwe = jweObject.serialize()
+      }
+    }
+    jwe
+  }
+
+
   def getJWS(alg : String, payloadStr : String, macSecret : String = "") : String = {
+    var jws : String = ""
     var jwsAlg : JWSAlgorithm = new JWSAlgorithm(alg)
     val privKey : RSAPrivateKey = getOpPrivateKey.asInstanceOf[RSAPrivateKey]
     var jwsSigner : JWSSigner = null
@@ -1201,8 +1270,6 @@ object OpenidConnect extends Controller with OptionalAuthElement with AuthConfig
       case "HS" => jwsSigner  = new MACSigner(macSecret.getBytes)
       case "RS" => jwsSigner  = new RSASSASigner(privKey)
     }
-
-
     val header = new JWSHeader(jwsAlg)
     header.setKeyID("key00")
     val payload = new PayloadExtStr(payloadStr)
@@ -1210,10 +1277,79 @@ object OpenidConnect extends Controller with OptionalAuthElement with AuthConfig
 
     jwsObject.sign(jwsSigner)
 
-    val jws : String = jwsObject.serialize()
+    jws = jwsObject.serialize()
     Logger.trace("JWS signature = " + jws)
     jws
   }
+
+  def verifyJWS(jws : String, sig : String, secret : String, jwkSet : JWKSet) : Boolean = {
+    var verified : Boolean = false
+    try {
+      val joseObject: JOSEObject = JOSEObject.parse(jws)
+      val joseHeader: ReadOnlyHeader = joseObject.getHeader
+      if (joseObject.isInstanceOf[JWSObject]) {
+        val jws: JWSObject = joseObject.asInstanceOf[JWSObject]
+        val jwsHeader: JWSHeader = joseHeader.asInstanceOf[JWSHeader]
+        val jwsAlg: JWSAlgorithm = JWSAlgorithm.parse(sig)
+        if(!jwsHeader.getAlgorithm.equals(jwsAlg))
+          throw new Exception("Signature Algorithm different from registered Alg")
+
+        val jwsVerifier = sig.substring(0, 2) match {
+          case "HS" => new MACVerifier(secret.getBytes)
+          case "RS" => {
+            val keyId = jwsHeader.getKeyID match {
+              case k: String => k
+              case _ => ""
+            }
+            new RSASSAVerifier(getJwkRsaSigKey(jwkSet, keyId).get)
+          }
+        }
+        verified = jws.verify(jwsVerifier)
+      }
+    }
+    catch {
+      case e : Throwable => Logger.trace("verifyJWS exception + " + e + "\n" + e.getStackTraceString)
+    }
+    Logger.trace("JWS verified = " + verified)
+    verified
+  }
+
+  def decryptJWE(jwt : String) : String = {
+    var decryptedPayload = ""
+    try {
+      val joseObject: JOSEObject = JOSEObject.parse(jwt)
+      val joseHeader: ReadOnlyHeader = joseObject.getHeader
+      if (joseObject.isInstanceOf[JWEObject]) {
+        val jwe: JWEObject = joseObject.asInstanceOf[JWEObject]
+        val jweHeader: JWEHeader = joseHeader.asInstanceOf[JWEHeader]
+        val jweDecrypter: JWEDecrypter = new RSADecrypter(getOpPrivateKey.asInstanceOf[RSAPrivateKey])
+        jwe.decrypt(jweDecrypter)
+        val payload : jose.Payload = jwe.getPayload
+        if(payload != null)
+          decryptedPayload = payload.toString
+      }
+    }
+    catch {
+      case e : Throwable => Logger.trace("decryptJWE exception + " + e + "\n" + e.getStackTraceString)
+    }
+    Logger.trace("Decrypted Payload = " + decryptedPayload)
+    decryptedPayload
+  }
+
+  def signEncrypt(payload : String, sig : String, alg : String, enc : String, jwksUri : String, clientSecret : String) : String = {
+    var jwt : String = payload
+    if(!sig.isEmpty)
+      jwt = getJWS(sig, payload, clientSecret)
+    if(!alg.isEmpty && !enc.isEmpty && !jwksUri.isEmpty)
+      jwt = getJWE(alg, enc, jwksUri, jwt)
+    jwt
+  }
+
+  def decryptVerify(jwt : String) = {
+    val joseObj : JOSEObject = JOSEObject.parse(jwt)
+
+  }
+
 
 
 

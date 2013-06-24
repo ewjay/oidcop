@@ -28,9 +28,9 @@
 [0m[[0mdebug[0m] [0m		to /usr/local/play-2.1.1/framework/../repository/cache/scala_2.9.2/sbt_0.12/play/sbt-plugin/ivy-2.1.1.xml.original.part[0m
 [0m[[0mdebug[0m] [0msha1 file found for http://repo.typesafe.com/typesafe/ivy-releases/play/sbt-plugin/scala_2.9.2/sbt_0.12/2.1.1/ivys/ivy.xml: checking...[0m
 [0m[[0mdebug[0m] [0m	typesafe-ivy-releases: downloading http://repo.typesafe.com/typesafe/ivy-releases/play/sbt-plugin/scala_2.9.2/sbt_0.12/2.1.1/ivys/ivy.xml.sha1[0m
-[0m[[0mdebug[0m] [0m		to /tmp/ivytmp7027907497934244987sha1[0m
+[0m[[0mdebug[0m] [0m		to /tmp/ivytmp33250984929079357sha1[0m
 [0m[[0mdebug[0m] [0msha1 OK for http://repo.typesafe.com/typesafe/ivy-releases/play/sbt-plugin/scala_2.9.2/sbt_0.12/2.1.1/ivys/ivy.xml[0m
-[0m[[0mdebug[0m] [0m	[SUCCESSFUL ] play#sbt-plugin;2.1.1!ivy.xml(ivy.original) (532ms)[0m
+[0m[[0mdebug[0m] [0m	[SUCCESSFUL ] play#sbt-plugin;2.1.1!ivy.xml(ivy.original) (650ms)[0m
 [0m[[0mdebug[0m] [0mpost 1.3 ivy file: using exact as default matcher[0m
 [0m[[0mdebug[0m] [0m	default-cache: parsed downloaded md file for play#sbt-plugin;2.1.1; parsed=play#sbt-plugin;2.1.1[0m
 [0m[[0mdebug[0m] [0m	checking play#sbt-plugin;2.1.1 from typesafe-ivy-releases against [none][0m
@@ -2517,9 +2517,9 @@
 [0m[[0mdebug[0m] [0m		to /usr/local/play-2.1.1/framework/../repository/cache/scala_2.9.2/sbt_0.12/com.typesafe.sbteclipse/sbteclipse-plugin/ivy-2.1.1.xml.original.part[0m
 [0m[[0mdebug[0m] [0msha1 file found for http://repo.typesafe.com/typesafe/ivy-releases/com.typesafe.sbteclipse/sbteclipse-plugin/scala_2.9.2/sbt_0.12/2.1.1/ivys/ivy.xml: checking...[0m
 [0m[[0mdebug[0m] [0m	typesafe-ivy-releases: downloading http://repo.typesafe.com/typesafe/ivy-releases/com.typesafe.sbteclipse/sbteclipse-plugin/scala_2.9.2/sbt_0.12/2.1.1/ivys/ivy.xml.sha1[0m
-[0m[[0mdebug[0m] [0m		to /tmp/ivytmp6447817897202862308sha1[0m
+[0m[[0mdebug[0m] [0m		to /tmp/ivytmp2241297875959846541sha1[0m
 [0m[[0mdebug[0m] [0msha1 OK for http://repo.typesafe.com/typesafe/ivy-releases/com.typesafe.sbteclipse/sbteclipse-plugin/scala_2.9.2/sbt_0.12/2.1.1/ivys/ivy.xml[0m
-[0m[[0mdebug[0m] [0m	[SUCCESSFUL ] com.typesafe.sbteclipse#sbteclipse-plugin;2.1.1!ivy.xml(ivy.original) (502ms)[0m
+[0m[[0mdebug[0m] [0m	[SUCCESSFUL ] com.typesafe.sbteclipse#sbteclipse-plugin;2.1.1!ivy.xml(ivy.original) (658ms)[0m
 [0m[[0mdebug[0m] [0mpost 1.3 ivy file: using exact as default matcher[0m
 [0m[[0mdebug[0m] [0m	default-cache: parsed downloaded md file for com.typesafe.sbteclipse#sbteclipse-plugin;2.1.1; parsed=com.typesafe.sbteclipse#sbteclipse-plugin;2.1.1[0m
 [0m[[0mdebug[0m] [0m	checking com.typesafe.sbteclipse#sbteclipse-plugin;2.1.1 from typesafe-ivy-releases against [none][0m
@@ -2543,9 +2543,9 @@
 [0m[[0mdebug[0m] [0m		to /usr/local/play-2.1.1/framework/../repository/cache/scala_2.9.2/sbt_0.12/com.typesafe.sbteclipse/sbteclipse-core/ivy-2.1.1.xml.original.part[0m
 [0m[[0mdebug[0m] [0msha1 file found for http://repo.typesafe.com/typesafe/ivy-releases/com.typesafe.sbteclipse/sbteclipse-core/scala_2.9.2/sbt_0.12/2.1.1/ivys/ivy.xml: checking...[0m
 [0m[[0mdebug[0m] [0m	typesafe-ivy-releases: downloading http://repo.typesafe.com/typesafe/ivy-releases/com.typesafe.sbteclipse/sbteclipse-core/scala_2.9.2/sbt_0.12/2.1.1/ivys/ivy.xml.sha1[0m
-[0m[[0mdebug[0m] [0m		to /tmp/ivytmp6463761291500591752sha1[0m
+[0m[[0mdebug[0m] [0m		to /tmp/ivytmp7644332801063155026sha1[0m
 [0m[[0mdebug[0m] [0msha1 OK for http://repo.typesafe.com/typesafe/ivy-releases/com.typesafe.sbteclipse/sbteclipse-core/scala_2.9.2/sbt_0.12/2.1.1/ivys/ivy.xml[0m
-[0m[[0mdebug[0m] [0m	[SUCCESSFUL ] com.typesafe.sbteclipse#sbteclipse-core;2.1.1!ivy.xml(ivy.original) (501ms)[0m
+[0m[[0mdebug[0m] [0m	[SUCCESSFUL ] com.typesafe.sbteclipse#sbteclipse-core;2.1.1!ivy.xml(ivy.original) (635ms)[0m
 [0m[[0mdebug[0m] [0mpost 1.3 ivy file: using exact as default matcher[0m
 [0m[[0mdebug[0m] [0m	default-cache: parsed downloaded md file for com.typesafe.sbteclipse#sbteclipse-core;2.1.1; parsed=com.typesafe.sbteclipse#sbteclipse-core;2.1.1[0m
 [0m[[0mdebug[0m] [0m	checking com.typesafe.sbteclipse#sbteclipse-core;2.1.1 from typesafe-ivy-releases against [none][0m
@@ -2620,9 +2620,9 @@
 [0m[[0mdebug[0m] [0m		to /usr/local/play-2.1.1/framework/../repository/cache/scala_2.9.2/sbt_0.12/com.typesafe.sbtidea/sbt-idea/ivy-1.1.1.xml.original.part[0m
 [0m[[0mdebug[0m] [0msha1 file found for http://repo.typesafe.com/typesafe/ivy-releases/com.typesafe.sbtidea/sbt-idea/scala_2.9.2/sbt_0.12/1.1.1/ivys/ivy.xml: checking...[0m
 [0m[[0mdebug[0m] [0m	typesafe-ivy-releases: downloading http://repo.typesafe.com/typesafe/ivy-releases/com.typesafe.sbtidea/sbt-idea/scala_2.9.2/sbt_0.12/1.1.1/ivys/ivy.xml.sha1[0m
-[0m[[0mdebug[0m] [0m		to /tmp/ivytmp8740268543770091346sha1[0m
+[0m[[0mdebug[0m] [0m		to /tmp/ivytmp5494334706007324443sha1[0m
 [0m[[0mdebug[0m] [0msha1 OK for http://repo.typesafe.com/typesafe/ivy-releases/com.typesafe.sbtidea/sbt-idea/scala_2.9.2/sbt_0.12/1.1.1/ivys/ivy.xml[0m
-[0m[[0mdebug[0m] [0m	[SUCCESSFUL ] com.typesafe.sbtidea#sbt-idea;1.1.1!ivy.xml(ivy.original) (502ms)[0m
+[0m[[0mdebug[0m] [0m	[SUCCESSFUL ] com.typesafe.sbtidea#sbt-idea;1.1.1!ivy.xml(ivy.original) (666ms)[0m
 [0m[[0mdebug[0m] [0mpost 1.3 ivy file: using exact as default matcher[0m
 [0m[[0mdebug[0m] [0m	default-cache: parsed downloaded md file for com.typesafe.sbtidea#sbt-idea;1.1.1; parsed=com.typesafe.sbtidea#sbt-idea;1.1.1[0m
 [0m[[0mdebug[0m] [0m	checking com.typesafe.sbtidea#sbt-idea;1.1.1 from typesafe-ivy-releases against [none][0m
@@ -13270,9 +13270,9 @@
 [0m[[0mdebug[0m] [0m		to /usr/local/play-2.1.1/framework/../repository/cache/scala_2.9.2/sbt_0.12/play/sbt-plugin/jars/sbt-plugin-2.1.1.jar.part[0m
 [0m[[0mdebug[0m] [0msha1 file found for http://repo.typesafe.com/typesafe/ivy-releases/play/sbt-plugin/scala_2.9.2/sbt_0.12/2.1.1/jars/sbt-plugin.jar: checking...[0m
 [0m[[0mdebug[0m] [0m	typesafe-ivy-releases: downloading http://repo.typesafe.com/typesafe/ivy-releases/play/sbt-plugin/scala_2.9.2/sbt_0.12/2.1.1/jars/sbt-plugin.jar.sha1[0m
-[0m[[0mdebug[0m] [0m		to /tmp/ivytmp6431294201018652069sha1[0m
+[0m[[0mdebug[0m] [0m		to /tmp/ivytmp8585917076229747152sha1[0m
 [0m[[0mdebug[0m] [0msha1 OK for http://repo.typesafe.com/typesafe/ivy-releases/play/sbt-plugin/scala_2.9.2/sbt_0.12/2.1.1/jars/sbt-plugin.jar[0m
-[0m[[0minfo[0m] [0m	[SUCCESSFUL ] play#sbt-plugin;2.1.1!sbt-plugin.jar (3986ms)[0m
+[0m[[0minfo[0m] [0m	[SUCCESSFUL ] play#sbt-plugin;2.1.1!sbt-plugin.jar (4113ms)[0m
 [0m[[0mdebug[0m] [0m	 trying /usr/local/play-2.1.1/repository/local/play/sbt-link/2.1.1/jars/sbt-link.jar[0m
 [0m[[0mdebug[0m] [0m		tried /usr/local/play-2.1.1/repository/local/play/sbt-link/2.1.1/jars/sbt-link.jar[0m
 [0m[[0mdebug[0m] [0m	[NOT REQUIRED] play#sbt-link;2.1.1!sbt-link.jar[0m
@@ -13323,9 +13323,9 @@
 [0m[[0mdebug[0m] [0m		to /usr/local/play-2.1.1/framework/../repository/cache/scala_2.9.2/sbt_0.12/com.typesafe.sbteclipse/sbteclipse-plugin/jars/sbteclipse-plugin-2.1.1.jar.part[0m
 [0m[[0mdebug[0m] [0msha1 file found for http://repo.typesafe.com/typesafe/ivy-releases/com.typesafe.sbteclipse/sbteclipse-plugin/scala_2.9.2/sbt_0.12/2.1.1/jars/sbteclipse-plugin.jar: checking...[0m
 [0m[[0mdebug[0m] [0m	typesafe-ivy-releases: downloading http://repo.typesafe.com/typesafe/ivy-releases/com.typesafe.sbteclipse/sbteclipse-plugin/scala_2.9.2/sbt_0.12/2.1.1/jars/sbteclipse-plugin.jar.sha1[0m
-[0m[[0mdebug[0m] [0m		to /tmp/ivytmp6977315664259873389sha1[0m
+[0m[[0mdebug[0m] [0m		to /tmp/ivytmp275256206371987148sha1[0m
 [0m[[0mdebug[0m] [0msha1 OK for http://repo.typesafe.com/typesafe/ivy-releases/com.typesafe.sbteclipse/sbteclipse-plugin/scala_2.9.2/sbt_0.12/2.1.1/jars/sbteclipse-plugin.jar[0m
-[0m[[0minfo[0m] [0m	[SUCCESSFUL ] com.typesafe.sbteclipse#sbteclipse-plugin;2.1.1!sbteclipse-plugin.jar (657ms)[0m
+[0m[[0minfo[0m] [0m	[SUCCESSFUL ] com.typesafe.sbteclipse#sbteclipse-plugin;2.1.1!sbteclipse-plugin.jar (815ms)[0m
 [0m[[0mdebug[0m] [0m	 trying http://repo.typesafe.com/typesafe/ivy-releases/com.typesafe.sbtidea/sbt-idea/scala_2.9.2/sbt_0.12/1.1.1/jars/sbt-idea.jar[0m
 [0m[[0mdebug[0m] [0m		tried http://repo.typesafe.com/typesafe/ivy-releases/com.typesafe.sbtidea/sbt-idea/scala_2.9.2/sbt_0.12/1.1.1/jars/sbt-idea.jar[0m
 [0m[[0minfo[0m] [0mdownloading http://repo.typesafe.com/typesafe/ivy-releases/com.typesafe.sbtidea/sbt-idea/scala_2.9.2/sbt_0.12/1.1.1/jars/sbt-idea.jar ...[0m
@@ -13333,9 +13333,9 @@
 [0m[[0mdebug[0m] [0m		to /usr/local/play-2.1.1/framework/../repository/cache/scala_2.9.2/sbt_0.12/com.typesafe.sbtidea/sbt-idea/jars/sbt-idea-1.1.1.jar.part[0m
 [0m[[0mdebug[0m] [0msha1 file found for http://repo.typesafe.com/typesafe/ivy-releases/com.typesafe.sbtidea/sbt-idea/scala_2.9.2/sbt_0.12/1.1.1/jars/sbt-idea.jar: checking...[0m
 [0m[[0mdebug[0m] [0m	typesafe-ivy-releases: downloading http://repo.typesafe.com/typesafe/ivy-releases/com.typesafe.sbtidea/sbt-idea/scala_2.9.2/sbt_0.12/1.1.1/jars/sbt-idea.jar.sha1[0m
-[0m[[0mdebug[0m] [0m		to /tmp/ivytmp7047102406140781412sha1[0m
+[0m[[0mdebug[0m] [0m		to /tmp/ivytmp2318628037384206838sha1[0m
 [0m[[0mdebug[0m] [0msha1 OK for http://repo.typesafe.com/typesafe/ivy-releases/com.typesafe.sbtidea/sbt-idea/scala_2.9.2/sbt_0.12/1.1.1/jars/sbt-idea.jar[0m
-[0m[[0minfo[0m] [0m	[SUCCESSFUL ] com.typesafe.sbtidea#sbt-idea;1.1.1!sbt-idea.jar (2034ms)[0m
+[0m[[0minfo[0m] [0m	[SUCCESSFUL ] com.typesafe.sbtidea#sbt-idea;1.1.1!sbt-idea.jar (2229ms)[0m
 [0m[[0mdebug[0m] [0m	 trying /usr/local/play-2.1.1/repository/local/com.github.scala-incubator.io/scala-io-core_2.9.2/0.4.1/jars/scala-io-core_2.9.2.jar[0m
 [0m[[0mdebug[0m] [0m		tried /usr/local/play-2.1.1/repository/local/com.github.scala-incubator.io/scala-io-core_2.9.2/0.4.1/jars/scala-io-core_2.9.2.jar[0m
 [0m[[0mdebug[0m] [0m	[NOT REQUIRED] com.github.scala-incubator.io#scala-io-core_2.9.2;0.4.1!scala-io-core_2.9.2.jar[0m
@@ -13415,9 +13415,9 @@
 [0m[[0mdebug[0m] [0m		to /usr/local/play-2.1.1/framework/../repository/cache/scala_2.9.2/sbt_0.12/com.typesafe.sbteclipse/sbteclipse-core/jars/sbteclipse-core-2.1.1.jar.part[0m
 [0m[[0mdebug[0m] [0msha1 file found for http://repo.typesafe.com/typesafe/ivy-releases/com.typesafe.sbteclipse/sbteclipse-core/scala_2.9.2/sbt_0.12/2.1.1/jars/sbteclipse-core.jar: checking...[0m
 [0m[[0mdebug[0m] [0m	typesafe-ivy-releases: downloading http://repo.typesafe.com/typesafe/ivy-releases/com.typesafe.sbteclipse/sbteclipse-core/scala_2.9.2/sbt_0.12/2.1.1/jars/sbteclipse-core.jar.sha1[0m
-[0m[[0mdebug[0m] [0m		to /tmp/ivytmp7953594289804936920sha1[0m
+[0m[[0mdebug[0m] [0m		to /tmp/ivytmp7645477740780363876sha1[0m
 [0m[[0mdebug[0m] [0msha1 OK for http://repo.typesafe.com/typesafe/ivy-releases/com.typesafe.sbteclipse/sbteclipse-core/scala_2.9.2/sbt_0.12/2.1.1/jars/sbteclipse-core.jar[0m
-[0m[[0minfo[0m] [0m	[SUCCESSFUL ] com.typesafe.sbteclipse#sbteclipse-core;2.1.1!sbteclipse-core.jar (1718ms)[0m
+[0m[[0minfo[0m] [0m	[SUCCESSFUL ] com.typesafe.sbteclipse#sbteclipse-core;2.1.1!sbteclipse-core.jar (1731ms)[0m
 [0m[[0mdebug[0m] [0m	 trying /usr/local/play-2.1.1/repository/local/org.scalaz/scalaz-core_2.9.2/6.0.4/jars/scalaz-core_2.9.2.jar[0m
 [0m[[0mdebug[0m] [0m		tried /usr/local/play-2.1.1/repository/local/org.scalaz/scalaz-core_2.9.2/6.0.4/jars/scalaz-core_2.9.2.jar[0m
 [0m[[0mdebug[0m] [0m	[NOT REQUIRED] org.scalaz#scalaz-core_2.9.2;6.0.4!scalaz-core_2.9.2.jar[0m
@@ -13470,7 +13470,7 @@
 [0m[[0mdebug[0m] [0m	[NOT REQUIRED] org.scala-sbt#cache;0.12.2!cache.jar[0m
 [0m[[0mdebug[0m] [0m	[NOT REQUIRED] org.scala-sbt#test-agent;0.12.2!test-agent.jar[0m
 [0m[[0mdebug[0m] [0m	[NOT REQUIRED] org.scala-tools.testing#test-interface;0.5!test-interface.jar[0m
-[0m[[0mdebug[0m] [0m:: resolution report :: resolve 13464ms :: artifacts dl 8570ms[0m
+[0m[[0mdebug[0m] [0m:: resolution report :: resolve 15905ms :: artifacts dl 8984ms[0m
 [0m[[0mdebug[0m] [0mNbr of module to sort : 61[0m
 [0m[[0mdebug[0m] [0mSort dependencies of : play#sbt-plugin;2.1.1 / Number of dependencies = 18[0m
 [0m[[0mdebug[0m] [0mSort dependencies of : play#sbt-link;2.1.1 / Number of dependencies = 1[0m
@@ -15655,5 +15655,5 @@
 [0m[[0mdebug[0m] [0m	report for default#default-7d11f2;0.1-SNAPSHOT docs produced in /home/edmund/work/oidcop/project/target/resolution-cache/reports/default-default-7d11f2/docs-resolved.xml[0m
 [0m[[0mdebug[0m] [0mNbr of module to sort : 0[0m
 [0m[[0mdebug[0m] [0m	report for default#default-7d11f2;0.1-SNAPSHOT pom produced in /home/edmund/work/oidcop/project/target/resolution-cache/reports/default-default-7d11f2/pom-resolved.xml[0m
-[0m[[0mdebug[0m] [0m	resolve done (13464ms resolve - 8570ms download)[0m
+[0m[[0mdebug[0m] [0m	resolve done (15905ms resolve - 8984ms download)[0m
 [0m[[0minfo[0m] [0mDone updating.[0m
