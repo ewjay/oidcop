@@ -103,7 +103,7 @@ trait AuthConfigImpl extends AuthConfig {
     val sessionId =  RandomStringUtils.randomAlphabetic(20);
     val sessionParams : Map[String, Any] = Map("auth_time"-> DateTime.now);
     Cache.set("session." + sessionId, sessionParams)
-    Redirect(uri).withSession(request.session - "access_uri" + ("sessionid" -> sessionId) + ("login_time" -> DateTime.now.toString(ISODateTimeFormat.dateTime)))
+    Redirect(uri).withSession(request.session - "access_uri" + ("sessionid" -> sessionId) + ("login_time" -> DateTime.now.toString(ISODateTimeFormat.dateTime))).flashing(("relogin", "1"))
   }
 
   def logoutSucceeded(request: RequestHeader) = {
