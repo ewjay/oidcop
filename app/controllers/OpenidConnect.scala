@@ -27,6 +27,9 @@ import javax.net.ssl.{HostnameVerifier, HttpsURLConnection, SSLContext, SSLSessi
 import java.io._
 import java.security.cert.CertificateFactory
 import java.util
+import java.util.zip.{Deflater, Inflater}
+import javax.crypto.{Cipher}
+import javax.crypto.spec.{SecretKeySpec, IvParameterSpec}
 import java.security.interfaces.{RSAPrivateKey, RSAPublicKey}
 import org.apache.commons.io.{FileUtils, IOUtils}
 import org.apache.http.client.utils._
@@ -128,7 +131,7 @@ object OpenidConnect extends Controller with OptionalAuthElement with AuthConfig
                                       "phone_number",
                                       "phone_number_verified",
                                       "address",
-                                      "updated_time"
+                                      "updated_at"
                                     ),
       "service_documentation" -> (issuerPath + "/service_doc"),
       "claims_locales_supported" -> Json.arr(),
@@ -417,11 +420,11 @@ object OpenidConnect extends Controller with OptionalAuthElement with AuthConfig
    val scopes = (req \ "scope").asOpt[String].getOrElse("").split(' ')
    if(!scopes.isEmpty) {
      if(scopes.contains("profile"))
-       scopeClaims = scopeClaims ++ Seq("name", "family_name", "given_name", "middle_name", "nickname", "preferred_username", "profile", "picture", "website", "gender", "birthdate", "zoneinfo", "locale", "updated_time")
+       scopeClaims = scopeClaims ++ Seq("name", "family_name", "given_name", "middle_name", "nickname", "preferred_username", "profile", "picture", "website", "gender", "birthdate", "zoneinfo", "locale", "updated_at")
      if(scopes.contains("email"))
        scopeClaims = scopeClaims ++ Seq("email", "email_verified")
      if(scopes.contains("address"))
-       scopeClaims = scopeClaims ++ Seq("address", "email_verified")
+       scopeClaims = scopeClaims ++ Seq("address")
      if(scopes.contains("phone"))
        scopeClaims = scopeClaims ++ Seq("phone_number", "phone_number_verified")
    }
@@ -564,7 +567,7 @@ object OpenidConnect extends Controller with OptionalAuthElement with AuthConfig
 
       var allowedClaims : Seq[String] = getAllRequestedClaims(requestedClaimsJson)
       if(responseTypes.contains("code")) {
-        val codeInfo : JsObject = Token.create_token_info("alice", "Default", allowedClaims.toList, JsObject(reqGet.map({case(x,y) => (x, JsString(y))}).toSeq), requestedClaimsJson)
+        val codeInfo : JsObject = Token.create_token_info(user.login, "Default", allowedClaims.toList, JsObject(reqGet.map({case(x,y) => (x, JsString(y))}).toSeq), requestedClaimsJson)
         codeVal = (codeInfo \ "name").asOpt[String].get
         val code = Token(0, 1, codeVal, Some(0), client.get.fields.get("client_id").asInstanceOf[Option[String]], None, Some(DateTime.now), Some(DateTime.now.plusDays(1)), Some(codeInfo.toString))
         Token.insert(code)
@@ -572,7 +575,7 @@ object OpenidConnect extends Controller with OptionalAuthElement with AuthConfig
       }
 
       if(responseTypes.contains("token")) {
-        val tokenInfo : JsObject = Token.create_token_info("alice", "Default", allowedClaims.toList, JsObject(reqGet.map({case(x,y) => (x, JsString(y))}).toSeq), requestedClaimsJson)
+        val tokenInfo : JsObject = Token.create_token_info(user.login, "Default", allowedClaims.toList, JsObject(reqGet.map({case(x,y) => (x, JsString(y))}).toSeq), requestedClaimsJson)
         tokenVal = (tokenInfo \ "name").asOpt[String].get
         val token = Token(0, 1, tokenVal, Some(1), client.get.fields.get("client_id").asInstanceOf[Option[String]], None, Some(DateTime.now), Some(DateTime.now.plusDays(1)), Some(tokenInfo.toString))
         Token.insert(token)
@@ -586,12 +589,11 @@ object OpenidConnect extends Controller with OptionalAuthElement with AuthConfig
         val persona = Persona.findByAccountPersona(user, "Default").get
         val idTokenClaims : Map[String, Any] = idTokenClaimsList.filter(p => allowedClaims.contains(p)).map{ claimName =>
           claimName match {
-            case "phone_number_verified" | "email_verified" => persona.fields.getOrElse(claimName, Some(0)).asInstanceOf[Option[Int]].get match {
-              case 0 => (claimName, false)
-              case 1 => (claimName, true)
+            case "phone_number_verified" | "email_verified" => persona.fields.getOrElse(claimName, Some(false)).asInstanceOf[Option[Boolean]].get match {
+              case verified : Boolean => (claimName, verified)
             }
             case "address" => val addressMap = new java.util.HashMap[String, java.lang.Object]; addressMap.put("formatted", persona.fields.getOrElse(claimName, Some("")).asInstanceOf[Option[String]].get);(claimName, addressMap)
-            case "updated_time" => (claimName, persona.fields.getOrElse(claimName, Some(DateTime.now)).asInstanceOf[Option[DateTime]].get)
+            case "updated_at" => (claimName, persona.fields.getOrElse(claimName, Some(DateTime.now)).asInstanceOf[Option[DateTime]].get)
             case "auth_time" => (claimName, cacheParams("auth_time").asInstanceOf[DateTime].getMillis)
             case field : String => (field, persona.fields.getOrElse(field, Some("")).asInstanceOf[Option[String]].get)
           }
@@ -613,7 +615,7 @@ object OpenidConnect extends Controller with OptionalAuthElement with AuthConfig
         var accessTokenHash = ""
         if(!tokenVal.isEmpty)
           accessTokenHash = Base64URL.encode(md.digest(tokenVal.getBytes).slice(0, hashLen)).toString
-        val idt = signEncrypt(makeIdToken(user.login, cid.get, idTokenClaims, nonce, codeHash, accessTokenHash), sig, alg, enc, jwksUri, clientSecret)
+        val idt = signEncrypt(makeIdToken(wrapUserId(client.get, user.login), cid.get, idTokenClaims, nonce, codeHash, accessTokenHash), sig, alg, enc, jwksUri, clientSecret)
         queryString += "id_token" -> Seq(idt )
       }
 
@@ -660,9 +662,12 @@ object OpenidConnect extends Controller with OptionalAuthElement with AuthConfig
 //      }
 //
       postForm.get("trust")(0) match {
-        case "always" =>
+        case "always" => {
+
+        }
         case _ =>
       }
+
       sendResponse(request, user.get, postForm.get("authorize")(0).equals("allow"))
     }
     catch {
@@ -754,7 +759,7 @@ object OpenidConnect extends Controller with OptionalAuthElement with AuthConfig
       var allowedClaims : Seq[String] = getAllRequestedClaims(requestedClaimsJson)
       if(responseTypes.contains("code")) {
         //        codeVal = RandomStringUtils.randomAlphanumeric(20)
-        val codeInfo : JsObject = Token.create_token_info("alice", "Default", allowedClaims.toList, JsObject(reqGet.map({case(x,y) => (x, JsString(y))}).toSeq), requestedClaimsJson)
+        val codeInfo : JsObject = Token.create_token_info(user.get.login, "Default", allowedClaims.toList, JsObject(reqGet.map({case(x,y) => (x, JsString(y))}).toSeq), requestedClaimsJson)
         codeVal = (codeInfo \ "name").asOpt[String].get
         val code = Token(0, 1, codeVal, Some(0), client.get.fields.get("client_id").asInstanceOf[Option[String]], None, Some(DateTime.now), Some(DateTime.now.plusDays(1)), Some(codeInfo.toString))
         Token.insert(code)
@@ -763,7 +768,7 @@ object OpenidConnect extends Controller with OptionalAuthElement with AuthConfig
 
       if(responseTypes.contains("token")) {
         //        tokenVal = RandomStringUtils.randomAlphanumeric(20)
-        val tokenInfo : JsObject = Token.create_token_info("alice", "Default", allowedClaims.toList, JsObject(reqGet.map({case(x,y) => (x, JsString(y))}).toSeq), requestedClaimsJson)
+        val tokenInfo : JsObject = Token.create_token_info(user.get.login, "Default", allowedClaims.toList, JsObject(reqGet.map({case(x,y) => (x, JsString(y))}).toSeq), requestedClaimsJson)
         tokenVal = (tokenInfo \ "name").asOpt[String].get
         val token = Token(0, 1, tokenVal, Some(1), client.get.fields.get("client_id").asInstanceOf[Option[String]], None, Some(DateTime.now), Some(DateTime.now.plusDays(1)), Some(tokenInfo.toString))
         Token.insert(token)
@@ -777,13 +782,12 @@ object OpenidConnect extends Controller with OptionalAuthElement with AuthConfig
         val persona = Persona.findByAccountPersona(user.get, "Default").get
         val idTokenClaims : Map[String, Any] = idTokenClaimsList.filter(p => allowedClaims.contains(p)).map{ claimName =>
           claimName match {
-            case "phone_number_verified" | "email_verified" => persona.fields.getOrElse(claimName, Some(0)).asInstanceOf[Option[Int]].get match {
-              case 0 => (claimName, false)
-              case 1 => (claimName, true)
+            case "phone_number_verified" | "email_verified" => persona.fields.getOrElse(claimName, Some(false)).asInstanceOf[Option[Boolean]].get match {
+              case verified : Boolean => (claimName, verified)
             }
             //          case "address" => (claimName, new net.minidev.json.JSONObject().put("formatted", persona.fields.getOrElse(claimName, Some("")).asInstanceOf[Option[String]].get))
             case "address" => val addressMap = new java.util.HashMap[String, java.lang.Object]; addressMap.put("formatted", persona.fields.getOrElse(claimName, Some("")).asInstanceOf[Option[String]].get);(claimName, addressMap)
-            case "updated_time" => (claimName, persona.fields.getOrElse(claimName, Some(DateTime.now)).asInstanceOf[Option[DateTime]].get)
+            case "updated_at" => (claimName, persona.fields.getOrElse(claimName, Some(DateTime.now)).asInstanceOf[Option[DateTime]].get)
             case "auth_time" => (claimName, cacheParams("auth_time").asInstanceOf[DateTime].getMillis)
             case field : String => (field, persona.fields.getOrElse(field, Some("")).asInstanceOf[Option[String]].get)
           }
@@ -805,7 +809,7 @@ object OpenidConnect extends Controller with OptionalAuthElement with AuthConfig
         var accessTokenHash = ""
         if(!tokenVal.isEmpty)
           accessTokenHash = Base64URL.encode(md.digest(tokenVal.getBytes).slice(0, hashLen)).toString
-        val idt = signEncrypt(makeIdToken(user.get.login, cid.get, idTokenClaims, nonce, codeHash, accessTokenHash), sig, alg, enc, jwksUri, clientSecret)
+        val idt = signEncrypt(makeIdToken(wrapUserId(client.get, user.get.login), cid.get, idTokenClaims, nonce, codeHash, accessTokenHash), sig, alg, enc, jwksUri, clientSecret)
         queryString += "id_token" -> Seq(idt )
       }
 
@@ -1085,13 +1089,12 @@ object OpenidConnect extends Controller with OptionalAuthElement with AuthConfig
       Logger.trace("cache param auth_time = " + cacheParams("auth_time").asInstanceOf[DateTime].getMillis + " " + cacheParams("auth_time").asInstanceOf[DateTime])
       val idTokenClaims : Map[String, Any] = idTokenClaimsList.filter(p=> allowedClaims.contains(p)).map{ claimName =>
         claimName match {
-          case "phone_number_verified" | "email_verified" => persona.fields.getOrElse(claimName, Some(0)).asInstanceOf[Option[Int]].get match {
-            case 0 => (claimName, false)
-            case 1 => (claimName, true)
+          case "phone_number_verified" | "email_verified" => persona.fields.getOrElse(claimName, Some(false)).asInstanceOf[Option[Boolean]].get match {
+            case verified : Boolean => (claimName, verified)
           }
 //          case "address" => (claimName, new net.minidev.json.JSONObject().put("formatted", persona.fields.getOrElse(claimName, Some("")).asInstanceOf[Option[String]].get))
           case "address" => val addressMap = new java.util.HashMap[String, java.lang.Object]; addressMap.put("formatted", persona.fields.getOrElse(claimName, Some("")).asInstanceOf[Option[String]].get);(claimName, addressMap)
-          case "updated_time" => (claimName, persona.fields.getOrElse(claimName, Some(DateTime.now)).asInstanceOf[Option[DateTime]].get)
+          case "updated_at" => (claimName, persona.fields.getOrElse(claimName, Some(DateTime.now)).asInstanceOf[Option[DateTime]].get)
           case "auth_time" => ("auth_time", cacheParams("auth_time").asInstanceOf[DateTime].getMillis)
           case field : String => (field, persona.fields.getOrElse(field, Some("")).asInstanceOf[Option[String]].get)
         }
@@ -1111,9 +1114,18 @@ object OpenidConnect extends Controller with OptionalAuthElement with AuthConfig
       val codeHash = Base64URL.encode(md.digest(code.getBytes).slice(0, hashLen)).toString
       val accessTokenHash = Base64URL.encode(md.digest(dbToken.token.getBytes).slice(0, hashLen)).toString
 
+      Seq("a", "bb", "ccc", "dddd", "eeeee", "ffffff", "ggggggg").foreach(id => {
+        Logger.trace("id = " + id)
+        val wrappedId = wrapUserId(client, id)
+        Logger.trace(" wrapped = " + wrappedId)
+        val unwrappedId = unWrapUserId(wrappedId)
+        Logger.trace(" unwrapped = " + unwrappedId)
+      })
+
+
       val jsonResponse = Json.obj(
         "access_token" -> dbToken.token,
-        "id_token" -> signEncrypt(makeIdToken(account.login, dbToken.client.get, idTokenClaims,(jsonReq \ "r" \ "nonce").asOpt[String].getOrElse(""), codeHash, accessTokenHash), sig, alg, enc, jwksUri, clientSecret),
+        "id_token" -> signEncrypt(makeIdToken(wrapUserId(client, account.login), dbToken.client.get, idTokenClaims,(jsonReq \ "r" \ "nonce").asOpt[String].getOrElse(""), codeHash, accessTokenHash), sig, alg, enc, jwksUri, clientSecret),
         "token_type" -> "bearer",
         "expires_in" -> 3600
       )
@@ -1152,13 +1164,12 @@ object OpenidConnect extends Controller with OptionalAuthElement with AuthConfig
       Logger.trace("userinfo allowed list = " + requestedUserInfoClaims)
 
       val returnClaims = requestedUserInfoClaims.filter(p => allowedClaims.contains(p)).map(f => f match {
-          case "sub"  => (f, Json.toJsFieldJsValueWrapper(account.login))
-          case "phone_number_verified" | "email_verified" => persona.fields.getOrElse(f, Some(0)).asInstanceOf[Option[Int]].get match {
-                                                            case 0 => (f, Json.toJsFieldJsValueWrapper(false))
-                                                            case 1 => (f, Json.toJsFieldJsValueWrapper(true))
+          case "sub"  => (f, Json.toJsFieldJsValueWrapper(wrapUserId(client, account.login)))
+          case "phone_number_verified" | "email_verified" => persona.fields.getOrElse(f, Some(false)).asInstanceOf[Option[Boolean]].get match {
+                                                            case verified : Boolean => (f, Json.toJsFieldJsValueWrapper(verified))
                                                          }
           case "address" => (f, Json.toJsFieldJsValueWrapper(Json.obj("formatted"->persona.fields.getOrElse(f, Some("")).asInstanceOf[Option[String]].get)))
-          case "updated_time" => (f, Json.toJsFieldJsValueWrapper(persona.fields.getOrElse(f, Some(DateTime.now)).asInstanceOf[Option[DateTime]].get))
+          case "updated_at" => (f, Json.toJsFieldJsValueWrapper(persona.fields.getOrElse(f, Some(DateTime.now)).asInstanceOf[Option[DateTime]].get))
           case field : String => (field, Json.toJsFieldJsValueWrapper(persona.fields.getOrElse(field, Some("")).asInstanceOf[Option[String]].get))
         }
       )
@@ -1211,7 +1222,7 @@ object OpenidConnect extends Controller with OptionalAuthElement with AuthConfig
 //        "phone_number" -> "451-965-5412",
 //        "phone_number_verified" -> true,
 //        "address" -> Json.obj("formatted" -> "123 Hollywood Blvd., Los Angeles, CA 95120"),
-//        "updated_time" -> "2013-03-30 09:00"
+//        "updated_at" -> "2013-03-30 09:00"
 //      )
 //      Ok(Json.prettyPrint(jsonResponse)).as(JSON)
 //    } else
@@ -1285,6 +1296,100 @@ object OpenidConnect extends Controller with OptionalAuthElement with AuthConfig
 
   def getConfig(key : String) : String = {
     Play.application.configuration.getString(key).get
+  }
+
+
+  def encrypt(plainText : Array[Byte]) : Array[Byte] =
+  {
+    try
+    {
+      val key : Array[Byte] = Array(10, 22, 35, 56, 78, 93, -33, -100, 123, 88, 60, 95, 42, 39, 2, -99).map{x => x.toByte}
+      val iv : Array[Byte] = Array(0, 1, 0, 2, 0, 3, 0, 4, 0, 5, 0, 6, 0, 7, 0, 8).map{x => x.toByte}
+      val cipher : Cipher = Cipher.getInstance("AES/CBC/PKCS5Padding")
+      val secretKey : SecretKeySpec = new SecretKeySpec(key, "AES")
+      val ivSpec : IvParameterSpec = new IvParameterSpec(iv)
+      cipher.init(Cipher.ENCRYPT_MODE, secretKey, ivSpec)
+      cipher.doFinal(plainText)
+    }
+    catch {
+      case e : Throwable => print("encrypt error " + e + "\n" + e.getStackTraceString);null
+    }
+  }
+
+  def decrypt(cipherText : Array[Byte]) : Array[Byte] =
+  {
+    try
+    {
+      val key : Array[Byte] = Array(10, 22, 35, 56, 78, 93, -33, -100, 123, 88, 60, 95, 42, 39, 2, -99).map{x => x.toByte}
+      val iv : Array[Byte] = Array(0, 1, 0, 2, 0, 3, 0, 4, 0, 5, 0, 6, 0, 7, 0, 8).map{x => x.toByte}
+      val cipher : Cipher = Cipher.getInstance("AES/CBC/PKCS5Padding")
+      val secretKey : SecretKeySpec = new SecretKeySpec(key, "AES")
+      val ivSpec : IvParameterSpec = new IvParameterSpec(iv)
+      cipher.init(Cipher.DECRYPT_MODE, secretKey, ivSpec)
+      cipher.doFinal(cipherText)
+    }
+    catch {
+      case e : Throwable => print("decrypt error " + e + "\n" + e.getStackTraceString);null
+    }
+  }
+
+  def deflate(input : Array[Byte]) : Array[Byte] = {
+    // Compress the bytes
+    val output : Array[Byte] = new Array(input.length)
+    val compresser : Deflater = new Deflater()
+    compresser.setInput(input)
+    compresser.finish()
+    val compressedDataLength : Int = compresser.deflate(output)
+    compresser.end()
+    output.slice(0, compressedDataLength)
+  }
+
+  def inflate(input : Array[Byte]) : Array[Byte] = {
+    // Decompress the bytes
+    val decompresser : Inflater = new Inflater()
+    val output : Array[Byte] = new Array(256)
+    decompresser.setInput(input)
+    val resultLength : Int = decompresser.inflate(output)
+    decompresser.end()
+    output.slice(0, resultLength)
+  }
+
+  def wrapUserId(client : Client, userid : String) : String = {
+    val clientId : String = client.fields.get("client_id").asInstanceOf[Option[Option[String]]].get.get
+    val subjectType : String = client.fields.get("subject_type").asInstanceOf[Option[Option[String]]].get.getOrElse("pairwise")
+    subjectType match {
+      case "public" => userid
+      case _ => { // pairwise
+        val inputString : String = clientId + ":" + userid
+        Logger.trace("inputString = " + inputString)
+        new String(org.apache.commons.codec.binary.Hex.encodeHex(encrypt(deflate(inputString.getBytes("UTF-8")))))
+      }
+    }
+  }
+
+  def unWrapUserId(wrappedUserId : String) : String = {
+
+    try {
+      val acct : Option[Account] = Account.findByLogin(wrappedUserId)
+      acct match {
+        case Some(_) => {
+          Logger.trace("already unwrapped Id = " + wrappedUserId)
+          wrappedUserId  // userId is already unwrapped
+        }
+        case None => {
+          var chars : Array[Char] = new Array(wrappedUserId.length)
+          wrappedUserId.getChars(0,wrappedUserId.length, chars, 0)
+          Logger.trace("char " + new String(chars))
+          Logger.trace("hex = " + Hex.decodeHex(chars))
+          val name = new String(inflate(decrypt(Hex.decodeHex(chars)))).split(':')(1)
+          Logger.trace("name = " + name)
+          name
+        }
+      }
+    }
+    catch {
+      case e : Throwable => Logger.trace("unwrap exception = " + e + e.getStackTraceString);""
+    }
   }
 
   def makeIdToken(sub : String, client : String, claims : Map[String, Any] = Map(), nonce : String = "", codeHash : String = "", accessTokenHash: String = "") : String = {
@@ -1695,7 +1800,10 @@ object OpenidConnect extends Controller with OptionalAuthElement with AuthConfig
         Logger.trace("session = " +  request.session)
 
         session
-        Ok(result.toString() + "\n" + tok).withSession(session + ("k1"->"p1"))
+
+        val site : Option[TrustedSite] = TrustedSite.findByAccountPersonaClient("alice", "default", "felK84-O6rz7jmSu-X8jaQ")
+
+        Ok(result.toString() + "\n" + tok + site.toString).withSession(session + ("k1"->"p1"))
 
 
 

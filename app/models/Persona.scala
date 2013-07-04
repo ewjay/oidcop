@@ -83,15 +83,16 @@ object Persona {
       get[Option[String]]("personas.picture") ~
       get[Option[String]]("personas.website") ~
       get[Option[String]]("personas.email") ~
-      get[Option[Int]]("personas.email_verified") ~
+      get[Option[Boolean]]("personas.email_verified") ~
       get[Option[String]]("personas.gender") ~
       get[Option[String]]("personas.birthdate") ~
       get[Option[String]]("personas.zoneinfo") ~
       get[Option[String]]("personas.locale") ~
       get[Option[String]]("personas.phone_number") ~
+      get[Option[Boolean]]("personas.phone_number_verified") ~
       get[Option[String]]("personas.address") ~
-      get[Option[DateTime]]("personas.updated_time") map {
-      case id~account_id~persona_name~name~name_ja_kana_jp~name_ja_hani_jp~given_name~given_name_ja_kana_jp~given_name_ja_hani_jp~family_name~family_name_ja_kana_jp~family_name_ja_hani_jp~middle_name~middle_name_ja_kana_jp~middle_name_ja_hani_jp~nickname~preferred_username~profile~picture~website~email~email_verified~gender~birthdate~zoneinfo~locale~phone_number~address~updated_time
+      get[Option[DateTime]]("personas.updated_at") map {
+      case id~account_id~persona_name~name~name_ja_kana_jp~name_ja_hani_jp~given_name~given_name_ja_kana_jp~given_name_ja_hani_jp~family_name~family_name_ja_kana_jp~family_name_ja_hani_jp~middle_name~middle_name_ja_kana_jp~middle_name_ja_hani_jp~nickname~preferred_username~profile~picture~website~email~email_verified~gender~birthdate~zoneinfo~locale~phone_number~phone_number_verified~address~updated_at
       => Persona( Map(
                       "id"->id,
                       "account_id"->account_id,
@@ -120,8 +121,9 @@ object Persona {
                       "zoneinfo"->zoneinfo,
                       "locale"->locale,
                       "phone_number"->phone_number,
+                      "phone_number_verified"->phone_number_verified,
                       "address"->address,
-                      "updated_time"->updated_time
+                      "updated_at"->updated_at
                     )
                 )
     }
