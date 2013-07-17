@@ -195,18 +195,18 @@ object OpenidConnect extends Controller with OptionalAuthElement with AuthConfig
     val clientSecret = RandomStringUtils.randomAlphanumeric(10)
     val regAccessToken = RandomStringUtils.randomAlphanumeric(10)
     val regClientUri =  RandomStringUtils.randomAlphanumeric(16)
-    val jsonClientInfo : JsObject = Json.obj( "client_id" -> clientId,
+    var jsonClientInfo : JsObject = Json.obj( "client_id" -> clientId,
                                               "client_secret" -> clientSecret,
                                               "registration_access_token" -> regAccessToken,
-                                              "registration_client_uri" -> regClientUri
+                                              "registration_client_uri" -> ("https://" + request.host + "/oidcop/client/" + regClientUri)
                                             )
 
     val jsonRequest : JsObject = request.body.as[JsObject]
     var fields : scala.collection.mutable.Map[String, Any] = Client.defaultFields.map{ case (x, y) => {
 //      Logger.trace("x = " + x + " class = " + x.getClass + " y = " + jsonRequest \ x)
       jsonRequest \ x match {
-        case JsNull => Logger.trace(x + " = none***\n");x -> None
-        case yVal : JsUndefined => Logger.trace(x + " = undefined***");x -> None
+        case JsNull => Logger.trace(x + " = none***\n");if(0 == x.compare("id_token_signed_response_alg")) {jsonClientInfo = jsonClientInfo  + ("id_token_signed_response_alg", JsString("RS256"));x -> "RS256"} else x-> None
+        case yVal : JsUndefined => Logger.trace(x + " = undefined***");if(0 == x.compare("id_token_signed_response_alg")) {jsonClientInfo = jsonClientInfo  + ("id_token_signed_response_alg", JsString("RS256"));x -> "RS256"} else x-> None
 //        case yVal : JsArray => Logger.trace(x + " = array***\n" + yVal.value.mkString("|") + "\n"); x-> yVal.value.mkString("|")
 //        case yVal : JsArray => Logger.trace(x + " = array***\n" + yVal.value.mkString("|") + "\n"); x-> yVal.value.map( f => {f.as[String]}).mkString("|")
 
@@ -224,7 +224,8 @@ object OpenidConnect extends Controller with OptionalAuthElement with AuthConfig
       }
     }}
 
-    Logger.trace("json = " + jsonRequest.toString)
+    Logger.trace("request fields = " + fields.toString())
+    Logger.trace("request json = " + jsonRequest.toString)
 //    Logger.trace("defaultFields = " + Client.defaultFields)
 //    Logger.trace("Fields = " + fields)
     fields("client_id") = clientId
@@ -234,12 +235,11 @@ object OpenidConnect extends Controller with OptionalAuthElement with AuthConfig
     val client = Client(fields)
     Client.insert(client)
 
-    Logger.trace("request class = " + request.getClass)
-
     val updatedInfo : JsObject = (jsonRequest ++ jsonClientInfo).as[JsObject]
 //    request.body.as[JsObject].value.foreach{case(k,v) => result += k + " " + v + "\n"}
 //    updatedInfo.value.foreach{case(k,v) => result += k + " " + v + "\n"}
 //    Ok(result)
+    Logger.trace("response json = " + updatedInfo.toString)
     Ok(Json.prettyPrint(updatedInfo)).as(JSON)
 
   }
@@ -1333,26 +1333,47 @@ object OpenidConnect extends Controller with OptionalAuthElement with AuthConfig
     }
   }
 
-  def deflate(input : Array[Byte]) : Array[Byte] = {
-    // Compress the bytes
-    val output : Array[Byte] = new Array(input.length)
-    val compresser : Deflater = new Deflater()
-    compresser.setInput(input)
-    compresser.finish()
-    val compressedDataLength : Int = compresser.deflate(output)
-    compresser.end()
-    output.slice(0, compressedDataLength)
+  def deflate(data : Array[Byte]) : Array[Byte] = {
+    val deflater : Deflater = new Deflater(Deflater.DEFAULT_COMPRESSION,true)
+    deflater.setInput(data)
+
+    val outputStream : ByteArrayOutputStream  = new ByteArrayOutputStream(data.length);
+
+    deflater.finish()
+    val buffer : Array[Byte] = new Array(1024)
+    while (!deflater.finished()) {
+      val count = deflater.deflate(buffer)
+      outputStream.write(buffer, 0, count)
+    }
+    outputStream.close()
+    val output : Array[Byte] = outputStream.toByteArray
+
+    Logger.trace("Original: " + data.length + " bytes")
+    Logger.trace("Compressed: " + output.length  + " bytes")
+    Logger.trace("Compressed Data : " + new String(Hex.encodeHex(output)))
+
+    output
   }
 
-  def inflate(input : Array[Byte]) : Array[Byte] = {
-    // Decompress the bytes
-    val decompresser : Inflater = new Inflater()
-    val output : Array[Byte] = new Array(256)
-    decompresser.setInput(input)
-    val resultLength : Int = decompresser.inflate(output)
-    decompresser.end()
-    output.slice(0, resultLength)
+  def inflate(data : Array[Byte]) : Array[Byte] = {
+    val inflater : Inflater  = new Inflater(true)
+    inflater.setInput(data)
+
+    val outputStream : ByteArrayOutputStream  = new ByteArrayOutputStream(data.length)
+    val buffer : Array[Byte]  = new Array(1024)
+    while (!inflater.finished()) {
+      val count = inflater.inflate(buffer)
+      outputStream.write(buffer, 0, count)
+    }
+    outputStream.close()
+    val output : Array[Byte] = outputStream.toByteArray
+
+    Logger.trace("Original: " + data.length)
+    Logger.trace("DeCompressed: " + output.length)
+    Logger.trace("DeCompressed data : " + new String(Hex.encodeHex(output)))
+    output
   }
+
 
   def wrapUserId(client : Client, userid : String) : String = {
     val clientId : String = client.fields.get("client_id").asInstanceOf[Option[Option[String]]].get.get
@@ -1361,8 +1382,9 @@ object OpenidConnect extends Controller with OptionalAuthElement with AuthConfig
       case "public" => userid
       case _ => { // pairwise
         val inputString : String = clientId + ":" + userid
-        Logger.trace("inputString = " + inputString)
-        new String(org.apache.commons.codec.binary.Hex.encodeHex(encrypt(deflate(inputString.getBytes("UTF-8")))))
+        var wrappedId = new String(org.apache.commons.codec.binary.Hex.encodeHex(encrypt(deflate(inputString.getBytes("UTF-8")))))
+        Logger.trace("inputString = " + inputString + " wrapped = " + wrappedId)
+        wrappedId
       }
     }
   }
@@ -1380,8 +1402,10 @@ object OpenidConnect extends Controller with OptionalAuthElement with AuthConfig
           var chars : Array[Char] = new Array(wrappedUserId.length)
           wrappedUserId.getChars(0,wrappedUserId.length, chars, 0)
           Logger.trace("char " + new String(chars))
-          Logger.trace("hex = " + Hex.decodeHex(chars))
-          val name = new String(inflate(decrypt(Hex.decodeHex(chars)))).split(':')(1)
+//          Logger.trace("hex = " + new String(Hex.decodeHex(chars)))
+          var unwrappedId = new String(inflate(decrypt(Hex.decodeHex(chars))))
+          Logger.trace("unwrappedId =  " + unwrappedId)
+          val name = unwrappedId.split(':')(1)
           Logger.trace("name = " + name)
           name
         }
