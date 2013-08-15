@@ -4,6 +4,7 @@
 
 # Home page
 GET     /.well-known/openid-configuration    controllers.OpenidConnect.openidConfig
+GET     /oidcop/.well-known/openid-configuration    controllers.OpenidConnect.openidConfig
 GET     /.well-known/webfinger               controllers.OpenidConnect.webFinger
 POST    /oidcop/register                     controllers.OpenidConnect.register
 GET     /oidcop/auth1                        controllers.OpenidConnect.auth1
@@ -13,6 +14,7 @@ GET     /oidcop/token                        controllers.OpenidConnect.token
 POST    /oidcop/token                        controllers.OpenidConnect.token
 GET     /oidcop/userinfo                     controllers.OpenidConnect.userinfo
 POST    /oidcop/userinfo                     controllers.OpenidConnect.userinfo
+GET    /oidcop/client/:clientUri             controllers.OpenidConnect.clientinfo(clientUri:String)
 GET     /oidcop/dbtest                       controllers.OpenidConnect.dbTest
 GET     /oidcop/jwktest                      controllers.OpenidConnect.jwkTest
 GET     /                                    controllers.Application.index

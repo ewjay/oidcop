@@ -47,6 +47,7 @@ import java.sql.Timestamp
 import utils._
 import com.nimbusds.jose
 import javax.mail.AuthenticationFailedException
+import scala.collection.mutable
 
 
 /**
@@ -60,6 +61,8 @@ import javax.mail.AuthenticationFailedException
 case class OidcException(error : String, desc : String = "", error_uri : String = ""  ) extends Throwable {
 }
 
+case class BearerException(error : String, desc : String = "", error_uri : String = ""  ) extends Throwable {
+}
 
 object OpenidConnect extends Controller with OptionalAuthElement with AuthConfigImpl{
 
@@ -243,6 +246,109 @@ object OpenidConnect extends Controller with OptionalAuthElement with AuthConfig
     Ok(Json.prettyPrint(updatedInfo)).as(JSON)
 
   }
+
+
+  def clientinfo(clientUri : String) = Action { implicit request =>
+//    if(clientUri.isEmpty)
+//      throw OidcException("invalid_request")
+//
+//
+//      val client : Option[Client] = Client.findByClientId(regTken)
+//      var jsonClientInfo : JsObject = Json.obj( "client_id" -> clientId,
+//        "client_secret" -> clientSecret,
+//        "registration_access_token" -> regAccessToken,
+//        "registration_client_uri" -> ("https://" + request.host + "/oidcop/client/" + regClientUri)
+//      )
+//
+//      Ok(Json.prettyPrint(jsonClientInfo)).as(JSON)
+
+
+    try {
+      var accessToken : String = getAccessTokenFromRequest(request)
+      if(accessToken.isEmpty)
+        throw BearerException("invalid_token", "no access token")
+
+      val client : Option[Client] = Client.findByRegUriAndToken(clientUri, accessToken)
+
+//      val specialKeys : Seq[String] = Seq("claims", "request", "requst_uri")
+//      val filtered : Map[String, String] = req.filterKeys(p => !specialKeys.contains(p))
+//
+//      val params = filtered.map {
+//        case (x, y) => (x,Json.toJsFieldJsValueWrapper(y))
+//      }
+//
+//      var jsonParams : JsObject = Json.obj(params.toSeq:_*)
+
+
+
+      client match {
+        case None =>  throw OidcException("invalid_client_id")
+        case Some(_) => {
+
+          val arrKeys : Seq[String] = Seq("redirect_uris", "response_types", "grant_types", "contacts", "post_logout_redirect_uris", "request_uris")
+          val specialKeys : Seq[String] = Seq("id", "client_secret_expires_at", "client_secret")
+          val filtered : mutable.Map[String, Any] = client.get.fields.filter( {case(x, y) =>
+            if(!specialKeys.contains(x)) {
+              y.asInstanceOf[Option[Any]] match {
+                case None => false
+                case Some(_) => true
+              }
+            } else
+              false
+          } )
+          Logger.trace("filter = " + filtered)
+
+
+          val params = filtered.map {
+            case (x, y) => (x match { case "registration_client_uri_path" => "registration_client_uri"
+                                      case _ => x
+                                    },
+                            {
+                            val yy : Any = y.asInstanceOf[Option[Any]].getOrElse("")
+                            yy match {
+                              case yval : Int => Json.toJsFieldJsValueWrapper(yval)
+                              case yval : Long => Json.toJsFieldJsValueWrapper(yval)
+                              case yval : String => {
+                                x match {
+                                  case "registration_client_uri_path" =>  Json.toJsFieldJsValueWrapper("https://" + request.host + "/oidcop/client/" + yval)
+                                  case _ =>  if(yval.contains("|") || arrKeys.contains(x))
+                                      Json.toJsFieldJsValueWrapper(yval.split('|'))
+                                    else Json.toJsFieldJsValueWrapper(yval)
+                                }
+                              }
+                              case yval : Boolean => Json.toJsFieldJsValueWrapper(yval)
+                            }
+                            }
+              )
+          }
+
+          var jsonParams : JsObject = Json.obj(params.toSeq:_*)
+
+//          val values = client.get.fields.map({
+//            case (x, y : Option[Any]) => (x, y.get match {
+//              case yval : Int => JsString  yval
+//              case yval : String => yval
+//              case yval : Long => yval
+//              case yval : Boolean => yval
+//            })
+//          })
+//
+//          Logger.trace("client values = " + values)
+//
+//          val json : JsObject = Json.obj(values)
+
+          Ok(Json.prettyPrint(jsonParams)).as(JSON)
+        }
+      }
+
+    }
+    catch {
+      case e : OidcException => Logger.trace("clientinfo exception " + e); sendError("", e.error, e.desc, "", "", true, UNAUTHORIZED)
+      case e : BearerException => Logger.trace("clientinfo exception " + e); sendBearerError(e.error, e.desc, FORBIDDEN)
+      case e : Throwable => Logger.trace("clientinfo Exception " + e);sendError("", "invalid_request", e.getStackTraceString, "", "", true, FORBIDDEN)
+    }
+
+ }
 
   def auth = StackAction { implicit request =>
     val user : Option[User] = loggedIn
@@ -456,6 +562,8 @@ object OpenidConnect extends Controller with OptionalAuthElement with AuthConfig
     try {
 
       redirectUri = request.getQueryString("redirect_uri").getOrElse("")
+      if(redirectUri.isEmpty)
+        throw OidcException("invalid_request", "no redirect_uri")
       val client = Client.findByClientId(request.getQueryString("client_id").getOrElse(""))
       if(client == None)
         throw OidcException("invalid_request", "no client")
@@ -514,8 +622,11 @@ object OpenidConnect extends Controller with OptionalAuthElement with AuthConfig
       val requestedClaimsJson1 : JsObject = newSessionParams("reqJson").asInstanceOf[JsObject]
       Logger.trace("json request = " + requestedClaimsJson1)
       val requestedClaims : Seq[String] = getAllRequestedClaims(requestedClaimsJson)
-      if(prompt.contains("consent"))
+      val trustedSite : Option[TrustedSite] = TrustedSite.findByAccountClient(user.get.login, client.get.fields("client_id").asInstanceOf[Option[String]].getOrElse(""));
+      if(prompt.contains("consent") || (trustedSite == None)) {
+        Logger.trace("waiting for consent")
         return Ok(views.html.confirm(requestedClaims))
+      }
       else
         sendResponse(request, user.get, true)
     }
@@ -579,7 +690,8 @@ object OpenidConnect extends Controller with OptionalAuthElement with AuthConfig
         tokenVal = (tokenInfo \ "name").asOpt[String].get
         val token = Token(0, 1, tokenVal, Some(1), client.get.fields.get("client_id").asInstanceOf[Option[String]], None, Some(DateTime.now), Some(DateTime.now.plusDays(1)), Some(tokenInfo.toString))
         Token.insert(token)
-        queryString += "access_token" -> Seq(tokenVal)
+        queryString += (("access_token", Seq(tokenVal)), ("token_type", Seq("Bearer")),  ("expires_in",Seq("3600")) )
+//        queryString += "access_token" -> Seq(tokenVal)
       }
 
       if(responseTypes.contains("id_token")) {
@@ -661,17 +773,45 @@ object OpenidConnect extends Controller with OptionalAuthElement with AuthConfig
 //        case _ =>
 //      }
 //
+      val cacheParams : Map[String, Any] = Cache.getAs[Map[String, Any]]("session."+request.session.get("sessionid").get).getOrElse(Map())
+      val reqGet : Map[String, String] = cacheParams("get").asInstanceOf[Map[String, String]]
+      val requestedClaimsJson : JsObject = cacheParams("reqJson").asInstanceOf[JsObject] ++ Json.obj("sessionid"->request.session.get("sessionid").get)
+
+      val state = (requestedClaimsJson \ "state").asOpt[String].getOrElse("")
+      redirectUri = (requestedClaimsJson \ "redirect_uri").asOpt[String].get
+      val client =  Client.findByClientId((requestedClaimsJson \ "client_id").asOpt[String].get)
+      if(client == None)
+        throw OidcException("invalid_request", "no client")
+      val trustedSite : Option[TrustedSite] = TrustedSite.findByAccountClient(loggedIn.get.login, client.get.fields("client_id").asInstanceOf[Option[String]].get)
+      val persona : Option[Persona] = Persona.findByAccountPersona(user.get, "Default")
+      val authorize : Boolean = postForm.get.getOrElse("authorize", Seq("deny"))(0).equals("authorize")
       postForm.get("trust")(0) match {
         case "always" => {
-
+          trustedSite match {
+            case None => {
+              if(authorize) {
+                val newSite : TrustedSite = TrustedSite(0, user.get.id, persona.get.fields("id").asInstanceOf[Long], client.get.fields("client_id").asInstanceOf[Option[String]].get)
+                TrustedSite.insert(newSite)
+              }
+            }
+            case Some(_) => {
+              if(!authorize)
+                TrustedSite.delete(trustedSite.get.id)
+            }
+          }
         }
-        case _ =>
+        case _ => {
+          trustedSite match {
+            case None =>
+            case Some(_) => TrustedSite.delete(trustedSite.get.id)
+          }
+        }
       }
 
-      sendResponse(request, user.get, postForm.get("authorize")(0).equals("allow"))
+      sendResponse(request, user.get, authorize)
     }
     catch {
-      case e : NoSuchElementException => {Logger.trace("NoSuchElementException" + e); sendError(redirectUri, "invalid_request") }
+      case e : NoSuchElementException => {Logger.trace("NoSuchElementException" + e + " " + e.getStackTraceString); sendError(redirectUri, "invalid_request") }
       case e : OidcException => sendError(redirectUri, e.error, e.desc, e.error_uri, state, isQuery)
       case e : Throwable => sendError(redirectUri, "unknown_error : " + e, e.getStackTraceString)
     }
@@ -1114,13 +1254,13 @@ object OpenidConnect extends Controller with OptionalAuthElement with AuthConfig
       val codeHash = Base64URL.encode(md.digest(code.getBytes).slice(0, hashLen)).toString
       val accessTokenHash = Base64URL.encode(md.digest(dbToken.token.getBytes).slice(0, hashLen)).toString
 
-      Seq("a", "bb", "ccc", "dddd", "eeeee", "ffffff", "ggggggg").foreach(id => {
-        Logger.trace("id = " + id)
-        val wrappedId = wrapUserId(client, id)
-        Logger.trace(" wrapped = " + wrappedId)
-        val unwrappedId = unWrapUserId(wrappedId)
-        Logger.trace(" unwrapped = " + unwrappedId)
-      })
+//      Seq("a", "bb", "ccc", "dddd", "eeeee", "ffffff", "ggggggg").foreach(id => {
+//        Logger.trace("id = " + id)
+//        val wrappedId = wrapUserId(client, id)
+//        Logger.trace(" wrapped = " + wrappedId)
+//        val unwrappedId = unWrapUserId(wrappedId)
+//        Logger.trace(" unwrapped = " + unwrappedId)
+//      })
 
 
       val jsonResponse = Json.obj(
@@ -1185,7 +1325,9 @@ object OpenidConnect extends Controller with OptionalAuthElement with AuthConfig
       val jwksUri : String = client.fields("jwks_uri").asInstanceOf[Option[String]].getOrElse("")
       val clientSecret : String = client.fields("client_secret").asInstanceOf[Option[String]].getOrElse("")
 
-      if(sig.isEmpty)
+      Logger.trace("sig: " + sig + " alg: " + alg + " enc: " + enc)
+
+      if(sig.isEmpty & alg.isEmpty)
         Ok(Json.prettyPrint(jsonClaims)).as(JSON)
       else {
         val jwt = signEncrypt(jsonClaims.toString, sig, alg, enc, jwksUri, clientSecret)
@@ -1429,7 +1571,7 @@ object OpenidConnect extends Controller with OptionalAuthElement with AuthConfig
     jwtClaims.setNotBeforeTime(new java.util.Date())
     jwtClaims.setIssueTime(new java.util.Date())
     jwtClaims.setJWTID(java.util.UUID.randomUUID().toString)
-    claims.foreach{ case (key, value) => jwtClaims.setCustomClaim(key, value)}
+    claims.foreach{ case (key, value) => Logger.trace("idtoken claim : " + key + " = " + value);jwtClaims.setCustomClaim(key, value)}
 
 
     if(!codeHash.isEmpty)
@@ -1464,6 +1606,7 @@ object OpenidConnect extends Controller with OptionalAuthElement with AuthConfig
         jwe = jweObject.serialize()
       }
     }
+    Logger.trace("jwe returning " + jwe)
     jwe
   }
 
@@ -1478,7 +1621,7 @@ object OpenidConnect extends Controller with OptionalAuthElement with AuthConfig
       case "RS" => jwsSigner  = new RSASSASigner(privKey)
     }
     val header = new JWSHeader(jwsAlg)
-    header.setKeyID("key00")
+//    header.setKeyID("key00")
     val payload = new PayloadExtStr(payloadStr)
     val jwsObject = new JWSObject(header, payload)
 
@@ -1498,10 +1641,16 @@ object OpenidConnect extends Controller with OptionalAuthElement with AuthConfig
         val jws: JWSObject = joseObject.asInstanceOf[JWSObject]
         val jwsHeader: JWSHeader = joseHeader.asInstanceOf[JWSHeader]
         val jwsAlg: JWSAlgorithm = JWSAlgorithm.parse(sig)
-        if(!jwsHeader.getAlgorithm.equals(jwsAlg))
-          throw new Exception("Signature Algorithm different from registered Alg")
+        if(sig.length > 0) {
+          Logger.trace("Alg  = " + jwsAlg.toString + " : " + sig)
+          if(!jwsHeader.getAlgorithm.equals(jwsAlg))
+            throw new Exception("Signature Algorithm different from registered Alg")
+        }
 
-        val jwsVerifier = sig.substring(0, 2) match {
+        val headerAlg = jwsHeader.getAlgorithm.getName
+        Logger.trace("header alg = " + headerAlg)
+
+        val jwsVerifier = headerAlg.substring(0, 2) match {
           case "HS" => new MACVerifier(secret.getBytes)
           case "RS" => {
             val keyId = jwsHeader.getKeyID match {

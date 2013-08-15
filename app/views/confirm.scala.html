@@ -1,12 +1,11 @@
-@(claims : Seq[String])
-<html>
+@(claims : Seq[String])<html>
 <head>
-    <title>Login</title>
+    <title>Confirm</title>
     <link rel="stylesheet" media="screen" href="@routes.Assets.at("stylesheets/main.css")">
     <link rel="shortcut icon" type="image/png" href="@routes.Assets.at("images/favicon.png")">
     <script src="@routes.Assets.at("javascripts/jquery-1.7.1.min.js")" type="text/javascript"></script>
-    </head>
-            <body>
+</head>
+<body>
 
     @helper.form(routes.OpenidConnect.confirm) {
 
@@ -17,15 +16,19 @@
         <li>@claim</li>
         }
     </ul>
+
+
     <p>
+        <input type="radio" name="trust" value="once" checked />Trust this site this time only <br/>
+        <input type="radio" name="trust" value="always" />Trust this site always
     </p>
+
     <p>
-        <input type="radio" name="trust" value="once" checked>Trust this site this time only <br />
-        <input type="radio" name="trust" value="always" >Trust this site always <br/>
+        <input type="checkbox" name="authorize" id="authorize" value="authorize" checked />Authorize Claims to the site <br/>
+    </p>
 
-        <button type="submit" id="cancelbutton" name="authorize" value="deny">Deny</button>&nbsp;&nbsp;&nbsp;
-        <button type="submit" id="okbutton" name="authorize" value="allow">Allow</button>
-
+    <p>
+        <input type="submit" name="ok" value="Submit" />
     </p>
 
     }

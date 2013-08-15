@@ -17,6 +17,7 @@ import scala.reflect.ClassTag
 import org.apache.commons.lang3.RandomStringUtils
 import org.joda.time.DateTime
 import org.joda.time.format.{ISODateTimeFormat, DateTimeFormat, DateTimeFormatter}
+import play.core.Router
 
 object Application extends Controller with LoginLogout with AuthConfigImpl {
   
@@ -98,20 +99,58 @@ trait AuthConfigImpl extends AuthConfig {
   def resolveUser(id: Id) = Account.findById(id)
 
   def loginSucceeded(request: RequestHeader) : Result = {
-    val uri = request.session.get("access_uri").getOrElse(routes.Messages.main.url.toString)
+    // val uri = request.session.get("access_uri").getOrElse(routes.Messages.main.url.toString)
+    var sessionAccessUri : Option[String] = request.session.get("sessionAccessUri")
+    var uri : String = routes.Messages.main.url.toString
+    var query : Map[String, Seq[String]] = Map()
+    sessionAccessUri match {
+      case None => {}
+      case _ => {
+        val sessionParams : Map[String, Any] = Cache.get("sessionAccessUri." + sessionAccessUri.getOrElse("")).get.asInstanceOf[Map[String, Any]]
+        uri = sessionParams("access_uri").asInstanceOf[String]
+        query = sessionParams("query").asInstanceOf[Map[String, Seq[String]]]
+        Logger.trace("uri = " + uri)
+        Logger.trace("query = " + query.toString())
+        Cache.remove("sessionAccessUri." + sessionAccessUri)
+      }
+    }
+
     val fmt : DateTimeFormatter = DateTimeFormat.forPattern("yyyyMMdd HHmmss z");
     val sessionId =  RandomStringUtils.randomAlphabetic(20);
     val sessionParams : Map[String, Any] = Map("auth_time"-> DateTime.now);
     Cache.set("session." + sessionId, sessionParams)
-    Redirect(uri).withSession(request.session - "access_uri" + ("sessionid" -> sessionId) + ("login_time" -> DateTime.now.toString(ISODateTimeFormat.dateTime))).flashing(("relogin", "1"))
+    Logger.trace("headers = " + request.headers.toString)
+//    Redirect(uri).withSession(request.session - "access_uri" + ("sessionid" -> sessionId) + ("login_time" -> DateTime.now.toString(ISODateTimeFormat.dateTime))).flashing(("relogin", "1"))
+    Redirect(uri, query).withSession(request.session - "sessionAccessUri" + ("sessionid" -> sessionId) + ("login_time" -> DateTime.now.toString(ISODateTimeFormat.dateTime))).flashing(("relogin", "1"))
   }
 
   def logoutSucceeded(request: RequestHeader) = {
     Cache.remove("session." + request.session.get("sessionid").get)
+    val url : String = routes.Application.login.absoluteURL(true)(request)
     Redirect(routes.Application.login).withNewSession
   }
 
-  def authenticationFailed(request: RequestHeader) = Redirect(routes.Application.login).withSession("access_uri" -> request.uri)
+  def authenticationFailed(request: RequestHeader) = {
+    var url : String = routes.Application.login.absoluteURL(true)(request)
+    Logger.trace("*** auth failed for " + request.uri)
+    Logger.trace("is request = " + request.isInstanceOf[Request[AnyContent]].toString)
+    if(request.isInstanceOf[Request[AnyContent]]) {
+      val req : Request[AnyContent] = request.asInstanceOf[Request[AnyContent]]
+      Logger.trace("req method =" + req.method)
+      Logger.trace("req domain =" + req.domain)
+      Logger.trace("req host =" + req.host)
+      Logger.trace("req path =" + req.path)
+      Logger.trace("req uri =" + req.uri)
+
+    }
+    val access_uri : String = "https://" + request.host + request.path
+//    val access_uri : String =  request.uri
+    val sessionId =  RandomStringUtils.randomAlphabetic(20);
+    val sessionParams : Map[String, Any] = Map("access_uri"-> access_uri, "query" -> request.queryString);
+    Cache.set("sessionAccessUri." + sessionId, sessionParams)
+    Logger.trace("access_uri =" + access_uri)
+    Redirect(url).withSession("sessionAccessUri" -> sessionId)
+  }
 
   def authorizationFailed(request: RequestHeader) = Forbidden("no permission")
 

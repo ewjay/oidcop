@@ -220,6 +220,24 @@ object Client {
     }
   }
 
+
+  /*
+* Finds Client By Client_id
+*/
+  def findByRegUriAndToken(uri: String, token : String): Option[Client] = {
+    try {
+      DB.withConnection { implicit conn =>
+        SQL("select * from clients where registration_client_uri_path = {uri} and registration_access_token = {token}").on("uri"-> uri, "token" -> token).as(Client.simple.singleOpt)
+      }
+    }
+    catch {
+      case unknown : Throwable => {
+        Logger.trace("Client.findByRegUriAndToken exception " + unknown)
+        None
+      }
+    }
+  }
+
   /**
    * List all the Clients
    */
