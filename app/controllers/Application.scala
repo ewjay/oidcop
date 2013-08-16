@@ -36,7 +36,20 @@ object Application extends Controller with LoginLogout with AuthConfigImpl {
 
   def login = Action { implicit request =>
     println("start login")
-    Ok(html.login(loginForm))
+
+    var logo_uri : String = ""
+    var policy_uri : String = ""
+    var sessionAccessUri : Option[String] = request.session.get("sessionAccessUri")
+    sessionAccessUri match {
+      case None => {}
+      case _ => {
+        val sessionParams : Map[String, Any] = Cache.get("sessionAccessUri." + sessionAccessUri.getOrElse("")).get.asInstanceOf[Map[String, Any]]
+        logo_uri = sessionParams("logo_uri").asInstanceOf[String]
+        policy_uri = sessionParams("policy_uri").asInstanceOf[String]
+      }
+    }
+
+    Ok(html.login(loginForm, logo_uri, policy_uri))
   }
 
   def logout = Action { implicit request =>
@@ -49,7 +62,19 @@ object Application extends Controller with LoginLogout with AuthConfigImpl {
     println("start act")
 
     loginForm.bindFromRequest.fold(
-      formWithErrors => { println("form eror"); BadRequest(html.login(formWithErrors))},
+      formWithErrors => { println("form eror");
+        var logo_uri : String = ""
+        var policy_uri : String = ""
+        var sessionAccessUri : Option[String] = request.session.get("sessionAccessUri")
+        sessionAccessUri match {
+          case None => {}
+          case _ => {
+            val sessionParams : Map[String, Any] = Cache.get("sessionAccessUri." + sessionAccessUri.getOrElse("")).get.asInstanceOf[Map[String, Any]]
+            logo_uri  = sessionParams("logo_uri").asInstanceOf[String]
+            policy_uri = sessionParams("policy_uri").asInstanceOf[String]
+          }
+        }
+        BadRequest(html.login(formWithErrors, logo_uri, policy_uri))},
       user => gotoLoginSucceeded(user.get.id)
     )
   }
@@ -146,7 +171,18 @@ trait AuthConfigImpl extends AuthConfig {
     val access_uri : String = "https://" + request.host + request.path
 //    val access_uri : String =  request.uri
     val sessionId =  RandomStringUtils.randomAlphabetic(20);
-    val sessionParams : Map[String, Any] = Map("access_uri"-> access_uri, "query" -> request.queryString);
+
+    val client : Option[Client] = Client.findByClientId(request.getQueryString("client_id").getOrElse(""))
+    var logo_uri =  ""
+    var policy_uri = ""
+    client match {
+      case None =>
+      case Some(_) =>
+        logo_uri = client.get.fields.get("logo_uri").asInstanceOf[Option[Option[String]]].get.getOrElse("")
+        policy_uri = client.get.fields.get("policy_uri").asInstanceOf[Option[Option[String]]].get.getOrElse("")
+    }
+
+    val sessionParams : Map[String, Any] = Map("access_uri"-> access_uri, "query" -> request.queryString, "logo_uri" -> logo_uri, "policy_uri" -> policy_uri);
     Cache.set("sessionAccessUri." + sessionId, sessionParams)
     Logger.trace("access_uri =" + access_uri)
     Redirect(url).withSession("sessionAccessUri" -> sessionId)

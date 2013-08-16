@@ -191,60 +191,67 @@ object OpenidConnect extends Controller with OptionalAuthElement with AuthConfig
 //          "method = [" + request.method + "]\n" +
 //          "tags = [" + request.tags + "]\n"
 //        )
-    var result : String = ""
-//    request.body + ("client_id", JsString("oidcop_client"))
-//    request.body + ("client_secret", JsString("oidcop_secret"))
-    val clientId = RandomStringUtils.randomAlphanumeric(16)
-    val clientSecret = RandomStringUtils.randomAlphanumeric(10)
-    val regAccessToken = RandomStringUtils.randomAlphanumeric(10)
-    val regClientUri =  RandomStringUtils.randomAlphanumeric(16)
-    var jsonClientInfo : JsObject = Json.obj( "client_id" -> clientId,
-                                              "client_secret" -> clientSecret,
-                                              "registration_access_token" -> regAccessToken,
-                                              "registration_client_uri" -> ("https://" + request.host + "/oidcop/client/" + regClientUri)
-                                            )
 
-    val jsonRequest : JsObject = request.body.as[JsObject]
-    var fields : scala.collection.mutable.Map[String, Any] = Client.defaultFields.map{ case (x, y) => {
-//      Logger.trace("x = " + x + " class = " + x.getClass + " y = " + jsonRequest \ x)
-      jsonRequest \ x match {
-        case JsNull => Logger.trace(x + " = none***\n");if(0 == x.compare("id_token_signed_response_alg")) {jsonClientInfo = jsonClientInfo  + ("id_token_signed_response_alg", JsString("RS256"));x -> "RS256"} else x-> None
-        case yVal : JsUndefined => Logger.trace(x + " = undefined***");if(0 == x.compare("id_token_signed_response_alg")) {jsonClientInfo = jsonClientInfo  + ("id_token_signed_response_alg", JsString("RS256"));x -> "RS256"} else x-> None
-//        case yVal : JsArray => Logger.trace(x + " = array***\n" + yVal.value.mkString("|") + "\n"); x-> yVal.value.mkString("|")
-//        case yVal : JsArray => Logger.trace(x + " = array***\n" + yVal.value.mkString("|") + "\n"); x-> yVal.value.map( f => {f.as[String]}).mkString("|")
+    try {
+      var result : String = ""
+      val clientId = RandomStringUtils.randomAlphanumeric(16)
+      val clientSecret = RandomStringUtils.randomAlphanumeric(10)
+      val regAccessToken = RandomStringUtils.randomAlphanumeric(10)
+      val regClientUri =  RandomStringUtils.randomAlphanumeric(16)
+      var jsonClientInfo : JsObject = Json.obj( "client_id" -> clientId,
+        "client_secret" -> clientSecret,
+        "registration_access_token" -> regAccessToken,
+        "registration_client_uri" -> ("https://" + request.host + "/oidcop/client/" + regClientUri)
+      )
 
-        case yVal : JsArray => Logger.trace(x + " = array***\n" + yVal.value.mkString("|") + "\n");
-          x-> yVal.value.map( f => {f match {
-            case fVal : JsString => Logger.trace("array string " + fVal.value);fVal.value
-            case fVal => Logger.trace("array unknown class =" + fVal.getClass);fVal.toString
-          }
-          }).mkString("|")
+      val jsonRequest : JsObject = request.body.as[JsObject]
+      var fields : scala.collection.mutable.Map[String, Any] = Client.defaultFields.map{ case (x, y) => {
+        //      Logger.trace("x = " + x + " class = " + x.getClass + " y = " + jsonRequest \ x)
+        jsonRequest \ x match {
+          case JsNull => Logger.trace(x + " = none***\n");if(0 == x.compare("id_token_signed_response_alg")) {jsonClientInfo = jsonClientInfo  + ("id_token_signed_response_alg", JsString("RS256"));x -> "RS256"} else x-> None
+          case yVal : JsUndefined => Logger.trace(x + " = undefined***");if(0 == x.compare("id_token_signed_response_alg")) {jsonClientInfo = jsonClientInfo  + ("id_token_signed_response_alg", JsString("RS256"));x -> "RS256"} else x-> None
+          //        case yVal : JsArray => Logger.trace(x + " = array***\n" + yVal.value.mkString("|") + "\n"); x-> yVal.value.mkString("|")
+          //        case yVal : JsArray => Logger.trace(x + " = array***\n" + yVal.value.mkString("|") + "\n"); x-> yVal.value.map( f => {f.as[String]}).mkString("|")
+
+          case yVal : JsArray => Logger.trace(x + " = array***\n" + yVal.value.mkString("|") + "\n")
+            if(x.equals("redirect_uris")) {
+              yVal.value.map( uri => if(uri.as[String].contains("#")) throw OidcException("invalid_redirect_uri", "invalid redirect_uri value"))
+            }
+            x-> yVal.value.map( f => {f match {
+              case fVal : JsString => Logger.trace("array string " + fVal.value);fVal.value
+              case fVal => Logger.trace("array unknown class =" + fVal.getClass);fVal.toString
+            }
+            }).mkString("|")
 
 
-        case yVal : JsBoolean => Logger.trace(x + " = boolean*** " + yVal.toString + "\n"); yVal.value match { case true => x->1; case false => x->0}
-        case yVal : JsString => Logger.trace(x + "= " + yVal.value + "\n"); x -> yVal.value
-        case yVal  => Logger.trace(x + "= " + yVal.toString + "\n"); x -> yVal.toString
-      }
-    }}
+          case yVal : JsBoolean => Logger.trace(x + " = boolean*** " + yVal.toString + "\n"); yVal.value match { case true => x->1; case false => x->0}
+          case yVal : JsString => Logger.trace(x + "= " + yVal.value + "\n"); x -> yVal.value
+          case yVal  => Logger.trace(x + "= " + yVal.toString + "\n"); x -> yVal.toString
+        }
+      }}
 
-    Logger.trace("request fields = " + fields.toString())
-    Logger.trace("request json = " + jsonRequest.toString)
-//    Logger.trace("defaultFields = " + Client.defaultFields)
-//    Logger.trace("Fields = " + fields)
-    fields("client_id") = clientId
-    fields("client_secret") = clientSecret
-    fields("registration_access_token") = regAccessToken
-    fields("registration_client_uri_path") = regClientUri
-    val client = Client(fields)
-    Client.insert(client)
+      Logger.trace("request fields = " + fields.toString())
+      Logger.trace("request json = " + jsonRequest.toString)
+      //    Logger.trace("defaultFields = " + Client.defaultFields)
+      //    Logger.trace("Fields = " + fields)
+      fields("client_id") = clientId
+      fields("client_secret") = clientSecret
+      fields("registration_access_token") = regAccessToken
+      fields("registration_client_uri_path") = regClientUri
+      val client = Client(fields)
+      Client.insert(client)
 
-    val updatedInfo : JsObject = (jsonRequest ++ jsonClientInfo).as[JsObject]
-//    request.body.as[JsObject].value.foreach{case(k,v) => result += k + " " + v + "\n"}
-//    updatedInfo.value.foreach{case(k,v) => result += k + " " + v + "\n"}
-//    Ok(result)
-    Logger.trace("response json = " + updatedInfo.toString)
-    Ok(Json.prettyPrint(updatedInfo)).as(JSON)
-
+      val updatedInfo : JsObject = (jsonRequest ++ jsonClientInfo).as[JsObject]
+      //    request.body.as[JsObject].value.foreach{case(k,v) => result += k + " " + v + "\n"}
+      //    updatedInfo.value.foreach{case(k,v) => result += k + " " + v + "\n"}
+      //    Ok(result)
+      Logger.trace("response json = " + updatedInfo.toString)
+      Ok(Json.prettyPrint(updatedInfo)).as(JSON)
+    }
+    catch {
+      case e : OidcException => sendError("", "invalid_redirect_uri", "invalid redirect uri")
+      case e : Throwable => sendError("", "invalid_client_metadata", e.getStackTraceString)
+    }
   }
 
 
@@ -383,6 +390,7 @@ object OpenidConnect extends Controller with OptionalAuthElement with AuthConfig
         separator = "#"
 
       val redir : String = String.format("%s%s%s", url, separator, params.map(x => x._1 + "=" + x._2 ).mkString("&"))
+      Logger.trace("Redirecting to " + redir)
       Redirect(redir)
     } else {
       val json : JsObject = JsObject(params.map(x=> x._1 -> JsString(x._2)).toSeq)
@@ -560,30 +568,52 @@ object OpenidConnect extends Controller with OptionalAuthElement with AuthConfig
     var state = ""
     var isQuery = true
     try {
-
+      state = request.getQueryString("state").getOrElse("")
       redirectUri = request.getQueryString("redirect_uri").getOrElse("")
       if(redirectUri.isEmpty)
         throw OidcException("invalid_request", "no redirect_uri")
+
       val client = Client.findByClientId(request.getQueryString("client_id").getOrElse(""))
       if(client == None)
         throw OidcException("invalid_request", "no client")
 
+      val registeredRedirectUris : Seq[String] = client.get.fields.asInstanceOf[mutable.Map[String, Option[Any]]].getOrElse("redirect_uris", Some("")).get.asInstanceOf[String].split('|')
+      Logger.trace("registered redirect_uris = " + registeredRedirectUris.toString)
+      Logger.trace("redirect_uri = " + redirectUri)
+
+      if(!registeredRedirectUris.contains(redirectUri)) {
+        Logger.trace("unregistered redirect_uri")
+        val index = redirectUri.indexOf('?'.toInt)
+        if(index != -1){
+          Logger.trace("redirect_uri has query")
+          var redirectUriNoQuery : String = redirectUri.substring(0, index)
+          if(!registeredRedirectUris.contains(redirectUriNoQuery)) {
+            redirectUri = ""
+            throw OidcException("invalid_request", "unregistered redirect uri")
+          }
+        } else {
+          Logger.trace("no query in redirect_uri")
+          redirectUri = ""
+          throw OidcException("invalid_request", "unregistered redirect uri")
+        }
+      } else
+        Logger.trace("redirect_uri is registered")
 
       var queryString : Map[String, Seq[String]] = Map()
-
       var prompt : Array[String] = (request.getQueryString("prompt").getOrElse("")).split(' ').filter(p => !p.isEmpty)
       val idTokenHint : Array[String] = request.getQueryString("id_token_hint").getOrElse("").split(' ').filter(p => !p.isEmpty)
-
       if(prompt.contains("none")) {
         if(user.equals(None) || (prompt.length > 1))
           throw OidcException("interaction_required", "uable to show UI with prompt set to none")
       }
-      if((prompt.contains("login") && !request.flash.get("relogin").getOrElse("0").equals("1")) || user.equals(None))
-        return authenticationFailed(request)
 
       var responseTypes : Array[String] = (request.getQueryString("response_type").getOrElse("")).split(' ').filter(p => !p.isEmpty)
+      Logger.trace("responseTypes = " + responseTypes.toSeq.toString)
       if(responseTypes.isEmpty)
         throw OidcException("invalid_request", "no response types")
+      val nonce = request.getQueryString("nonce").getOrElse("")
+      if(responseTypes.contains("token") && nonce.isEmpty)
+        throw OidcException("invalid_request", "no nonce")
 
       val scopes : Array[String] = request.getQueryString("scope").getOrElse("").split(' ').filter(p => !p.isEmpty)
       if(scopes.isEmpty)
@@ -591,10 +621,11 @@ object OpenidConnect extends Controller with OptionalAuthElement with AuthConfig
       if(!scopes.contains("openid"))
         throw OidcException("invalid_scope", "no openid scope")
 
-      val state = request.getQueryString("state").getOrElse("")
-      val nonce = request.getQueryString("nonce").getOrElse("")
       val maxAge : Int = request.getQueryString("max_age").getOrElse(client.get.fields.get("default_max_age").asInstanceOf[Option[Option[Int]]].get.getOrElse(0).toString).toInt
       Logger.trace("max_age = " + maxAge)
+
+      if((prompt.contains("login") && !request.flash.get("relogin").getOrElse("0").equals("1")) || user.equals(None))
+        return authenticationFailed(request)
 
       val cacheParams : Map[String, Any] = Cache.getAs[Map[String, Any]]("session."+request.session.get("sessionid").get).getOrElse(Map())
       val authTime = cacheParams("auth_time").asInstanceOf[DateTime]
@@ -625,7 +656,9 @@ object OpenidConnect extends Controller with OptionalAuthElement with AuthConfig
       val trustedSite : Option[TrustedSite] = TrustedSite.findByAccountClient(user.get.login, client.get.fields("client_id").asInstanceOf[Option[String]].getOrElse(""));
       if(prompt.contains("consent") || (trustedSite == None)) {
         Logger.trace("waiting for consent")
-        return Ok(views.html.confirm(requestedClaims))
+        val logo_uri : String = client.get.fields.get("logo_uri").asInstanceOf[Option[Option[String]]].get.getOrElse("")
+        val policy_uri : String = client.get.fields.get("policy_uri").asInstanceOf[Option[Option[String]]].get.getOrElse("")
+        return Ok(views.html.confirm(requestedClaims, logo_uri, policy_uri))
       }
       else
         sendResponse(request, user.get, true)
@@ -633,7 +666,6 @@ object OpenidConnect extends Controller with OptionalAuthElement with AuthConfig
     catch {
       case e : NoSuchElementException => { sendError(redirectUri, "invalid_request", e.toString) }
       case e : OidcException => sendError(redirectUri, e.error, e.desc, e.error_uri, state, isQuery)
-//      case unknown => { BadRequest("Unknown error")}
       case e : Throwable => sendError(redirectUri, "unknown_error : " + e, e.getStackTraceString)
     }
 
@@ -1246,13 +1278,17 @@ object OpenidConnect extends Controller with OptionalAuthElement with AuthConfig
       val jwksUri : String = client.fields("jwks_uri").asInstanceOf[Option[String]].getOrElse("")
       val clientSecret : String = client.fields("client_secret").asInstanceOf[Option[String]].getOrElse("")
 
+      var codeHash : String = ""
+      var accessTokenHash : String = ""
       val idTokenSignAlg : String = client.fields.get("id_token_signed_response_alg").asInstanceOf[Option[Option[String]]].get.getOrElse("RS256")
-      val hashAlg = "SHA-" + sig.substring(2)
-      val hashBitLen : Int = sig.substring(2).toInt
-      val hashLen =  hashBitLen / (8 * 2)
-      val md : MessageDigest = MessageDigest.getInstance(hashAlg)
-      val codeHash = Base64URL.encode(md.digest(code.getBytes).slice(0, hashLen)).toString
-      val accessTokenHash = Base64URL.encode(md.digest(dbToken.token.getBytes).slice(0, hashLen)).toString
+      if(idTokenSignAlg.compare("none") != 0) {
+        val hashAlg = "SHA-" + sig.substring(2)
+        val hashBitLen : Int = sig.substring(2).toInt
+        val hashLen =  hashBitLen / (8 * 2)
+        val md : MessageDigest = MessageDigest.getInstance(hashAlg)
+        codeHash = Base64URL.encode(md.digest(code.getBytes).slice(0, hashLen)).toString
+        accessTokenHash = Base64URL.encode(md.digest(dbToken.token.getBytes).slice(0, hashLen)).toString
+      }
 
 //      Seq("a", "bb", "ccc", "dddd", "eeeee", "ffffff", "ggggggg").foreach(id => {
 //        Logger.trace("id = " + id)
@@ -1488,13 +1524,15 @@ object OpenidConnect extends Controller with OptionalAuthElement with AuthConfig
       outputStream.write(buffer, 0, count)
     }
     outputStream.close()
-    val output : Array[Byte] = outputStream.toByteArray
+    outputStream.toByteArray
 
-    Logger.trace("Original: " + data.length + " bytes")
-    Logger.trace("Compressed: " + output.length  + " bytes")
-    Logger.trace("Compressed Data : " + new String(Hex.encodeHex(output)))
+//    val output : Array[Byte] = outputStream.toByteArray
 
-    output
+//    Logger.trace("Original: " + data.length + " bytes")
+//    Logger.trace("Compressed: " + output.length  + " bytes")
+//    Logger.trace("Compressed Data : " + new String(Hex.encodeHex(output)))
+//
+//    output
   }
 
   def inflate(data : Array[Byte]) : Array[Byte] = {
@@ -1508,12 +1546,13 @@ object OpenidConnect extends Controller with OptionalAuthElement with AuthConfig
       outputStream.write(buffer, 0, count)
     }
     outputStream.close()
-    val output : Array[Byte] = outputStream.toByteArray
-
-    Logger.trace("Original: " + data.length)
-    Logger.trace("DeCompressed: " + output.length)
-    Logger.trace("DeCompressed data : " + new String(Hex.encodeHex(output)))
-    output
+    outputStream.toByteArray
+//    val output : Array[Byte] = outputStream.toByteArray
+//
+//    Logger.trace("Original: " + data.length)
+//    Logger.trace("DeCompressed: " + output.length)
+//    Logger.trace("DeCompressed data : " + new String(Hex.encodeHex(output)))
+//    output
   }
 
 
@@ -1619,15 +1658,23 @@ object OpenidConnect extends Controller with OptionalAuthElement with AuthConfig
     alg.substring(0, 2) match {
       case "HS" => jwsSigner  = new MACSigner(macSecret.getBytes)
       case "RS" => jwsSigner  = new RSASSASigner(privKey)
+      case _ =>
     }
-    val header = new JWSHeader(jwsAlg)
-//    header.setKeyID("key00")
+
     val payload = new PayloadExtStr(payloadStr)
-    val jwsObject = new JWSObject(header, payload)
+    if(jwsSigner != null) {
+      val header = new JWSHeader(jwsAlg)
+      //    header.setKeyID("key00")
+      val jwsObject = new JWSObject(header, payload)
+      jwsObject.sign(jwsSigner)
+      jws = jwsObject.serialize()
+    } else {
 
-    jwsObject.sign(jwsSigner)
+      val header = new PlainHeader()
+      val jwtPlain : PlainJWT = new PlainJWT(header.toBase64URL, Base64URL.encode(payloadStr))
+      jws = jwtPlain.serialize()
+    }
 
-    jws = jwsObject.serialize()
     Logger.trace("JWS signature = " + jws)
     jws
   }

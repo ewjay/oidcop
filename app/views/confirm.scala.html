@@ -1,4 +1,5 @@
-@(claims : Seq[String])<html>
+@(claims : Seq[String], logo_uri : String, policy_uri : String)
+<html>
 <head>
     <title>Confirm</title>
     <link rel="stylesheet" media="screen" href="@routes.Assets.at("stylesheets/main.css")">
@@ -7,6 +8,7 @@
 </head>
 <body>
 
+    <img src="@logo_uri">
     @helper.form(routes.OpenidConnect.confirm) {
 
     <h1>The RP requesting access to the following claims:</h1>
@@ -19,8 +21,10 @@
 
 
     <p>
-        <input type="radio" name="trust" value="once" checked />Trust this site this time only <br/>
-        <input type="radio" name="trust" value="always" />Trust this site always
+        <input type="radio" name="trust" value="once" />Trust this site this time only <br/>
+    </p>
+    <p>
+        <input type="radio" name="trust" value="always" checked/>Trust this site always
     </p>
 
     <p>
@@ -32,6 +36,8 @@
     </p>
 
     }
+
+    <a href="@policy_uri">Policy</a>
 
 </body>
 </html>
