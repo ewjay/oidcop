@@ -1,0 +1,12 @@
+<component name="libraryTable">
+  <library name="nimbus.jose">
+    <CLASSES>
+      <root url="jar://$PROJECT_DIR$/lib/jcip-annotations-1.0.jar!/" />
+      <root url="jar://$PROJECT_DIR$/lib/json-smart-1.1.1.jar!/" />
+      <root url="jar://$PROJECT_DIR$/lib/nimbus-jose-jwt-2.16.1.jar!/" />
+      <root url="jar://$PROJECT_DIR$/lib/java-mail-1.47.jar!/" />
+    </CLASSES>
+    <JAVADOC />
+    <SOURCES />
+  </library>
+</component>

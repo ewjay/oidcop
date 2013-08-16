@@ -1,0 +1,11 @@
+<component name="libraryTable">
+  <library name="play2.auth">
+    <CLASSES>
+      <root url="jar:///usr/local/play-2.1.1/repository/cache/jp.t2v/play2.auth.test_2.10/jars/play2.auth.test_2.10-0.9.jar!/" />
+      <root url="jar:///usr/local/play-2.1.1/repository/cache/jp.t2v/play2.auth_2.10/jars/play2.auth_2.10-0.9.jar!/" />
+      <root url="jar:///usr/local/play-2.1.1/repository/cache/jp.t2v/stackable-controller_2.10/jars/stackable-controller_2.10-0.2.jar!/" />
+    </CLASSES>
+    <JAVADOC />
+    <SOURCES />
+  </library>
+</component>
