@@ -811,7 +811,7 @@ object OpenidConnect extends Controller with OptionalAuthElement with AuthConfig
 
       val state = (requestedClaimsJson \ "state").asOpt[String].getOrElse("")
       redirectUri = (requestedClaimsJson \ "redirect_uri").asOpt[String].get
-      val client =  Client.findByClientId((requestedClaimsJson \ "client_id").asOpt[String].get)
+      val client : Option[Client] =  Client.findByClientId((requestedClaimsJson \ "client_id").asOpt[String].get)
       if(client == None)
         throw OidcException("invalid_request", "no client")
       val trustedSite : Option[TrustedSite] = TrustedSite.findByAccountClient(loggedIn.get.login, client.get.fields("client_id").asInstanceOf[Option[String]].get)

@@ -197,7 +197,7 @@ object Client {
     }
     catch {
       case unknown : Throwable => {
-        Logger.trace("Client.findByClientId exception " + unknown)
+        Logger.trace("Client.findByClientId exception " + unknown + "\n" + unknown.getStackTraceString)
         None
       }
     }
@@ -214,7 +214,7 @@ object Client {
     }
     catch {
       case unknown : Throwable => {
-        Logger.trace("Client.findByClientId exception " + unknown)
+        Logger.trace("Client.findByClientIdAndClientSecret exception " + unknown)
         None
       }
     }

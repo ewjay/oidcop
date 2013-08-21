@@ -142,7 +142,7 @@ object Persona {
     }
     catch {
       case unknown : Throwable => {
-        Logger.trace("Client.findByClientId exception " + unknown)
+        Logger.trace("Persona.findByAccountPersona exception " + unknown)
         None
       }
     }
