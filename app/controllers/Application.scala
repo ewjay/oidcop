@@ -30,7 +30,7 @@ object Application extends Controller with LoginLogout with AuthConfigImpl {
   }
 
   val loginForm = Form {
-    mapping("login" -> text, "password" -> text)(Account.authenticate)(_.map(u => (u.login, "")))
+    mapping("login" -> default(text, "alice"), "password" -> default(text, "wonderland"))(Account.authenticate)(_.map(u => (u.login, "")))
       .verifying("Invalid email or password", result => result.isDefined)
   }
 
