@@ -17,6 +17,8 @@ POST    /oidcop/userinfo                     controllers.OpenidConnect.userinfo
 GET    /oidcop/client/:clientUri             controllers.OpenidConnect.clientinfo(clientUri:String)
 GET     /oidcop/dbtest                       controllers.OpenidConnect.dbTest
 GET     /oidcop/jwktest                      controllers.OpenidConnect.jwkTest
+GET     /oidcop/checksession                 controllers.OpenidConnect.checksession
+GET     /oidcop/endsession                   controllers.OpenidConnect.endsession
 GET     /                                    controllers.Application.index
 
 

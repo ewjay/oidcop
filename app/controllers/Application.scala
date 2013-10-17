@@ -146,13 +146,25 @@ trait AuthConfigImpl extends AuthConfig {
     Cache.set("session." + sessionId, sessionParams)
     Logger.trace("headers = " + request.headers.toString)
 //    Redirect(uri).withSession(request.session - "access_uri" + ("sessionid" -> sessionId) + ("login_time" -> DateTime.now.toString(ISODateTimeFormat.dateTime))).flashing(("relogin", "1"))
-    Redirect(uri, query).withSession(request.session - "sessionAccessUri" + ("sessionid" -> sessionId) + ("login_time" -> DateTime.now.toString(ISODateTimeFormat.dateTime))).flashing(("relogin", "1"))
+    val cookies : Cookie  = Cookie("ops", sessionId, None, "/", None, false, false)
+    Logger.trace("loginsucceeded session = " + request.session)
+    Redirect(uri, query).withSession(request.session - "sessionAccessUri" + ("sessionid" -> sessionId) + ("login_time" -> DateTime.now.toString(ISODateTimeFormat.dateTime))).withCookies(cookies).flashing(("relogin", "1"))
   }
 
   def logoutSucceeded(request: RequestHeader) = {
-    Cache.remove("session." + request.session.get("sessionid").get)
-    val url : String = routes.Application.login.absoluteURL(true)(request)
-    Redirect(routes.Application.login).withNewSession
+    Logger.trace("logoutsucceeded session = " + request.session)
+    try{
+      Cache.remove("session." + request.session.get("sessionid").get)
+    }
+    catch {
+      case e : NoSuchElementException =>
+    }
+    val cookies : Cookie  = Cookie("ops", "", Some(-1), "/", None, false, false)
+    val logoutRedirectUri : String = request.getQueryString("post_logout_redirect_uri").getOrElse("")
+    if(logoutRedirectUri.isEmpty)
+      Redirect(routes.Application.login).withNewSession.withCookies(cookies)
+    else
+      Ok(views.html.endsession(logoutRedirectUri)).withNewSession.withCookies(cookies)
   }
 
   def authenticationFailed(request: RequestHeader) = {

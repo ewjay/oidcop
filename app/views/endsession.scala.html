@@ -1,0 +1,20 @@
+@(post_logout_url : String)
+<html>
+<head>
+    <meta http-equiv="content-type" content="text/html;charset=UTF-8" />
+    <script src="@routes.Assets.at("javascripts/jquery-1.9.0.min.js")" type="text/javascript"></script>
+    <script type='text/javascript'>//<![CDATA[
+
+    $(document).ready(function() {
+        window.location.href = "@post_logout_url";
+    });
+
+    //]]></script>
+</head>
+<body>
+<noscript>
+    <p> Click on the following link to return to the previous site :</p>
+    <a href="@post_logout_url">@post_logout_url</a>
+</noscript>
+</body>
+</html>
