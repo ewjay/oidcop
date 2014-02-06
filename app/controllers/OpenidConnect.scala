@@ -50,15 +50,15 @@ import jp.t2v.lab.play2.stackc.{RequestWithAttributes, RequestAttributeKey, Stac
 
 import utils._
 
-import scala.sys.process.ProcessBuilder.URLBuilder
-import scala.sys.process
-import javax.mail.AuthenticationFailedException
+//import scala.sys.process.ProcessBuilder.URLBuilder
+//import scala.sys.process
+//import javax.mail.AuthenticationFailedException
 
-import scala.Some
-import scala.collection.mutable
+//import scala.Some
+//import scala.collection.mutable
 
-import controllers.BearerException
-import controllers.OidcException
+//import controllers.BearerException
+//import controllers.OidcException
 
 
 /**
@@ -221,6 +221,24 @@ object OpenidConnect extends Controller with OptionalAuthElement with AuthConfig
         }
       }}
 
+      val jsonRequestKeys : scala.collection.Set[String] = jsonRequest.keys;
+      if(!jsonRequestKeys.contains("redirect_uris"))
+        throw OidcException("invalid_redirect_uri", "no redirect uris");
+      if(jsonRequestKeys.contains("sector_identifier_uri")) {
+        val sectorUris : String = getSSLURLContents((jsonRequest \ "sector_identifier_uri").as[String])
+        if(sectorUris.isEmpty)
+          throw OidcException("invalid_client_metadata", "empty sector identifier uri contents")
+        val sectorUrisJson : Array[String] = Json.parse(sectorUris).as[JsArray].as[Array[String]]
+        Logger.trace("sectorUrisJson = " + sectorUrisJson.toSeq.toString())
+        val redirectUrisJson : Array[String] = (jsonRequest \ "redirect_uris").as[JsArray].as[Array[String]]
+        Logger.trace("redirectUrisJson = " + redirectUrisJson.toSeq.toString)
+        if(sectorUrisJson.length != redirectUrisJson.length)
+          throw OidcException("invalid_client_metadata", "invalid sector_identifier_uri content")
+        if(!sectorUrisJson.forall(x => redirectUrisJson.contains(x)))
+          throw OidcException("invalid_client_metadata", "invalid sector_idenfifier_uri content")
+
+      }
+
       Logger.trace("request fields = " + fields.toString())
       Logger.trace("request json = " + jsonRequest.toString)
       fields("client_id") = clientId
@@ -234,7 +252,7 @@ object OpenidConnect extends Controller with OptionalAuthElement with AuthConfig
       Ok(Json.prettyPrint(updatedInfo)).as(JSON)
     }
     catch {
-      case e : OidcException => Logger.trace(e.getStackTraceString); sendError("", "invalid_redirect_uri", "invalid redirect uri")
+      case e : OidcException => Logger.trace(e.getStackTraceString); sendError("", e.error, e.desc)
       case e : Throwable => sendError("", "invalid_client_metadata", e.getStackTraceString)
     }
   }
@@ -252,7 +270,7 @@ object OpenidConnect extends Controller with OptionalAuthElement with AuthConfig
 
           val arrKeys : Seq[String] = Seq("redirect_uris", "response_types", "grant_types", "contacts", "post_logout_redirect_uris", "request_uris")
           val specialKeys : Seq[String] = Seq("id", "client_secret_expires_at", "client_secret")
-          val filtered : mutable.Map[String, Any] = client.get.fields.filter( {case(x, y) =>
+          val filtered : scala.collection.mutable.Map[String, Any] = client.get.fields.filter( {case(x, y) =>
             if(!specialKeys.contains(x)) {
               y.asInstanceOf[Option[Any]] match {
                 case None => false
@@ -334,7 +352,7 @@ object OpenidConnect extends Controller with OptionalAuthElement with AuthConfig
 
       val redir : String = String.format("%s%s%s", url, separator, params.map(x => x._1 + "=" + x._2 ).mkString("&"))
       Logger.trace("Redirecting to " + redir)
-      Redirect(redir)
+      Redirect(redir, FOUND)
     } else {
       val json : JsObject = JsObject(params.map(x=> x._1 -> JsString(x._2)).toSeq)
       val headers : Map[String, String] = Map("Cache-Control"->"no-store", "Pragma"->"no-cache")
@@ -496,7 +514,7 @@ object OpenidConnect extends Controller with OptionalAuthElement with AuthConfig
       if(client == None)
         throw OidcException("invalid_request", "no client")
 
-      val registeredRedirectUris : Seq[String] = client.get.fields.asInstanceOf[mutable.Map[String, Option[Any]]].getOrElse("redirect_uris", Some("")).get.asInstanceOf[String].split('|')
+      val registeredRedirectUris : Seq[String] = client.get.fields.asInstanceOf[scala.collection.mutable.Map[String, Option[Any]]].getOrElse("redirect_uris", Some("")).get.asInstanceOf[String].split('|')
       Logger.trace("registered redirect_uris = " + registeredRedirectUris.toString)
       Logger.trace("redirect_uri = " + redirectUri)
 
@@ -759,7 +777,7 @@ object OpenidConnect extends Controller with OptionalAuthElement with AuthConfig
           queryParams = queryString.map{case(x,y) => x + "=" + y.mkString(",")}.mkString("&")
       }
       val redirURL = URIUtils.createURI(uri.getScheme, uri.getHost, uri.getPort, uri.getPath, queryParams, fragmentParams)
-      Redirect(redirURL.toASCIIString)
+      Redirect(redirURL.toASCIIString, FOUND)
     }
     catch {
       case e : NoSuchElementException => {Logger.trace("NoSuchElementException" + e + e.getStackTraceString); sendError(redirectUri, "invalid_request") }
@@ -967,7 +985,7 @@ object OpenidConnect extends Controller with OptionalAuthElement with AuthConfig
           queryParams = queryString.map{case(x,y) => x + "=" + y.mkString(",")}.mkString("&")
       }
       val redirURL = URIUtils.createURI(uri.getScheme, uri.getHost, uri.getPort, uri.getPath, queryParams, fragmentParams)
-      Redirect(redirURL.toASCIIString)
+      Redirect(redirURL.toASCIIString, FOUND)
     }
     catch {
       case e : NoSuchElementException => {Logger.trace("NoSuchElementException" + e); sendError(redirectUri, "invalid_request") }
@@ -996,7 +1014,7 @@ object OpenidConnect extends Controller with OptionalAuthElement with AuthConfig
         queryString += "token" -> Seq("id_token1")
 
       queryString += "nonce" -> Seq("noncevalue", "nonceval2")
-      Redirect(redirectUri, queryString)
+      Redirect(redirectUri, queryString, FOUND)
     }
     catch {
       case e : NoSuchElementException => { BadRequest("Invalid parameters") }
@@ -1083,7 +1101,7 @@ object OpenidConnect extends Controller with OptionalAuthElement with AuthConfig
 
       var tokenEndpointAuthMethod = "client_secret_basic"
       val dbClient : Option[Client] = (clientId, clientSecret, assertionType, assertion) match {
-        case (Some(_), None, None, None) =>  {
+        case (_, None, None, None) =>  {
           Logger.trace("client_secret_basic matched");
           tokenEndpointAuthMethod = "client_secret_basic"
           val auth : String = request.headers.get("authorization").get
@@ -1105,7 +1123,7 @@ object OpenidConnect extends Controller with OptionalAuthElement with AuthConfig
           tokenEndpointAuthMethod = "client_secret_post"
           Client.findByClientIdAndClientSecret(clientId.get, clientSecret.get)
         }
-        case (Some(_), None, Some("urn:ietf:params:oauth:client-assertion-type:jwt-bearer"), Some(_)) =>  {
+        case (_, None, Some("urn:ietf:params:oauth:client-assertion-type:jwt-bearer"), Some(_)) =>  {
           Logger.trace("client_secret_jwt matched")
           tokenEndpointAuthMethod = "client_secret_jwt"
           val jwsObj : JWSObject = JWSObject.parse(assertion.get)
@@ -1135,18 +1153,18 @@ object OpenidConnect extends Controller with OptionalAuthElement with AuthConfig
             None
         }
 
-        case (Some(_), None, Some("private_key_jwt"), Some(_)) => {
-          Logger.trace("private_key_jwt matched");
-          tokenEndpointAuthMethod = "private_key_jwt"
-          None
-        }
+//        case (_, None, Some("private_key_jwt"), Some(_)) => {
+//          Logger.trace("private_key_jwt matched");
+//          tokenEndpointAuthMethod = "private_key_jwt"
+//          None
+//        }
         case _ => Logger.trace("none matched"); None
       }
 
       Logger.trace("auth method = " + tokenEndpointAuthMethod)
 
       dbClient match {
-        case None => false
+        case None => { Logger.trace("no match"); false }
         case c : Option[Client] => {
           tokenEndpointAuthMethod = c.get.fields("token_endpoint_auth_method").asInstanceOf[Option[String]].getOrElse("client_secret_basic")
           tokenEndpointAuthMethod match {
@@ -1258,6 +1276,7 @@ object OpenidConnect extends Controller with OptionalAuthElement with AuthConfig
         "token_type" -> "bearer",
         "expires_in" -> 3600
       )
+      Token.delete(dbCode.get.id)
       Ok(Json.prettyPrint(jsonResponse)).as(JSON).withHeaders(("Cache-Control", "no-store"), ("Pragma","no-cache"))
     }
     catch {
@@ -1390,6 +1409,7 @@ object OpenidConnect extends Controller with OptionalAuthElement with AuthConfig
   }
 
   def getURLContents(url : String) : String = {
+    Logger.trace("getURLContents : " + url)
     val in : InputStream = new URL(url).openStream();
     try {
       IOUtils.toString(in)
@@ -1399,6 +1419,7 @@ object OpenidConnect extends Controller with OptionalAuthElement with AuthConfig
   }
 
   def getSSLURLContents(url : String) : String = {
+    Logger.trace("getSSLURLContents : " + url)
     // Create a trust manager that does not validate certificate chains
     val trustAllCerts : Array[TrustManager]  = Array(new X509TrustAllManager)
     // Install the all-trusting trust manager
@@ -1692,10 +1713,16 @@ object OpenidConnect extends Controller with OptionalAuthElement with AuthConfig
 
   }
 
-
-
-
   def dbTest = Action { implicit request =>
+    val ubuntu : String = getSSLURLContents("https://ubuntu/abrp/index.php/sector_id");
+    Logger.trace("ubuntu = " + ubuntu)
+    val phprp : String = getSSLURLContents("https://phprp.sonicdemo.local/abrp/index.php/sector_id");
+    Logger.trace("phprp = " + phprp)
+    Ok(ubuntu + "\n" + phprp).as(TEXT)
+  }
+
+
+  def dbTest1 = Action { implicit request =>
     try {
       DB.withConnection { implicit conn =>
 //        val result : Boolean  = accountSQL.on("login" -> "alice").execute()
@@ -2053,50 +2080,84 @@ object OpenidConnect extends Controller with OptionalAuthElement with AuthConfig
 
 //      val rsaMultiPrimePrivateCrtKeySpec : RSAMultiPrimePrivateCrtKeySpec = new RSAMultiPrimePrivateCrtKeySpec(opPrivatekey.getModulus, opPrivatekey.get)
 
-      val rsaOPKey = new RSAKey(opPublicKey, opPrivatekey.asInstanceOf[RSAPrivateKey], null, null, null,null, null, null)
-      val rsaRPKey = new RSAKey(rpPublicKey, rpPrivatekey.asInstanceOf[RSAPrivateKey], null, null, null,null, null, null)
+      val rsaOPKey = new RSAKey(opPublicKey, opPrivatekey.asInstanceOf[RSAPrivateCrtKey], null, null, null,null, null, null)
+      val rsaRPKey = new RSAKey(rpPublicKey, rpPrivatekey.asInstanceOf[RSAPrivateCrtKey], null, null, null,null, null, null)
 
       val jwkString = "OP JWK :\n" + rsaOPKey.toJSONString + "\nRP JWK :\n" + rsaRPKey.toJSONString
       Logger.trace(jwkString)
 
-      val jwk = getFileContents("/home/edmund/work/oidcop/public/keys/jwktest.jwk")
-      Logger.trace("jwk = " + jwk)
-
-      val jwkSet : JWKSet = JWKSet.parse(jwk)
-      val keyList : java.util.List[JWK] = jwkSet.getKeys()
-      val it : java.util.Iterator[JWK] = keyList.iterator()
-      while(it.hasNext){
-        val jwkKey : JWK = it.next()
-        Logger.trace("jwk key = " + jwkKey.toJSONString)
-        if(jwkKey.getAlgorithm != null)
-          Logger.trace("alg = " + jwkKey.getAlgorithm.toString + "\n")
-        if(jwkKey.getKeyID != null)
-          Logger.trace("keyId" + jwkKey.getKeyID + "\n" )
-        if(jwkKey.getKeyType != null)
-          Logger.trace("type" + jwkKey.getKeyType.toString + "\n" )
-        if(jwkKey.getKeyUse != null)
-          Logger.trace("use" + jwkKey.getKeyUse.name() + "\n" )
-        Logger.trace("key" + jwkKey.asInstanceOf[RSAKey].toRSAPublicKey.toString + "\n")
-//          "keyId" + jwkKey.getKeyID + "\n" +
-//          "keyId" + jwkKey.getKeyID + "\n" +
-//          "keyId" + jwkKey.getKeyID + "\n"
+      var payloadStr : String = "ew0KICJpc3MiOiAiczZCaGRSa3F0MyIsDQogImF1ZCI6ICJodHRwczovL3NlcnZlci5leGFtcGxlLmNvbSIsDQogInJlc3BvbnNlX3R5cGUiOiAiY29kZSBpZF90b2tlbiIsDQogImNsaWVudF9pZCI6ICJzNkJoZFJrcXQzIiwNCiAicmVkaXJlY3RfdXJpIjogImh0dHBzOi8vY2xpZW50LmV4YW1wbGUub3JnL2NiIiwNCiAic2NvcGUiOiAib3BlbmlkIiwNCiAic3RhdGUiOiAiYWYwaWZqc2xka2oiLA0KICJub25jZSI6ICJuLTBTNl9XekEyTWoiLA0KICJtYXhfYWdlIjogODY0MDAsDQogImNsYWltcyI6IA0KICB7DQogICAidXNlcmluZm8iOiANCiAgICB7DQogICAgICJnaXZlbl9uYW1lIjogeyJlc3NlbnRpYWwiOiB0cnVlfSwNCiAgICAgIm5pY2tuYW1lIjogbnVsbCwNCiAgICAgImVtYWlsIjogeyJlc3NlbnRpYWwiOiB0cnVlfSwNCiAgICAgImVtYWlsX3ZlcmlmaWVkIjogeyJlc3NlbnRpYWwiOiB0cnVlfSwNCiAgICAgInBpY3R1cmUiOiBudWxsDQogICAgfSwNCiAgICJpZF90b2tlbiI6IA0KICAgIHsNCiAgICAgImdlbmRlciI6IG51bGwsDQogICAgICJiaXJ0aGRhdGUiOiB7ImVzc2VudGlhbCI6IHRydWV9LA0KICAgICAiYWNyIjogeyJ2YWx1ZXMiOiBbInVybjptYWNlOmluY29tbW9uOmlhcDpzaWx2ZXIiXX0NCiAgICB9DQogIH0NCn0"
+      var alg : String = "RS256"
+      var jws : String = ""
+      var jwsAlg : JWSAlgorithm = new JWSAlgorithm(alg)
+      val privKey : RSAPrivateKey = rpPrivatekey.asInstanceOf[RSAPrivateKey]
+      var jwsSigner : JWSSigner = null
+      alg.substring(0, 2) match {
+        case "RS" => jwsSigner  = new RSASSASigner(privKey)
+        case _ =>
       }
 
-      Logger.trace("key")
+      val payload = new PayloadExtBase64Url(new Base64URL(payloadStr))
+      if(jwsSigner != null) {
+        val header = new JWSHeader(jwsAlg)
+        //    header.setKeyID("key00")
+        val jwsObject = new JWSObject(header, payload)
+        jwsObject.sign(jwsSigner)
+        jws = jwsObject.serialize()
+      } else {
 
-      val sigKey = getJwkRsaSigKey(jwkSet)
-      Logger.trace("############sig keys = " + sigKey)
+        val header = new PlainHeader()
+        val jwtPlain : PlainJWT = new PlainJWT(header.toBase64URL, Base64URL.encode(payloadStr))
+        jws = jwtPlain.serialize()
+      }
 
-      val sigKey1 = getJwkRsaSigKey(jwkSet, "key03")
-      Logger.trace("############sig keys 1= " + sigKey1)
+      Logger.trace("JWS signature = " + jws)
+      jws
 
-      val encKey1 = getJwkRsaEncKey(jwkSet, "key03")
-      Logger.trace("############enc keys 1= " + encKey1)
 
-      val encKey2 = getJwkRsaEncKey(jwkSet, "key04")
-      Logger.trace("############enc keys 2 = " + encKey2)
 
-      Ok(jwkString).as(TEXT)
+      if(false) {
+        val jwk = getFileContents("/home/edmund/work/oidcop/public/keys/jwktest.jwk")
+        Logger.trace("jwk = " + jwk)
+
+        val jwkSet : JWKSet = JWKSet.parse(jwk)
+        val keyList : java.util.List[JWK] = jwkSet.getKeys()
+        val it : java.util.Iterator[JWK] = keyList.iterator()
+        while(it.hasNext){
+          val jwkKey : JWK = it.next()
+          Logger.trace("jwk key = " + jwkKey.toJSONString)
+          if(jwkKey.getAlgorithm != null)
+            Logger.trace("alg = " + jwkKey.getAlgorithm.toString + "\n")
+          if(jwkKey.getKeyID != null)
+            Logger.trace("keyId" + jwkKey.getKeyID + "\n" )
+          if(jwkKey.getKeyType != null)
+            Logger.trace("type" + jwkKey.getKeyType.toString + "\n" )
+          if(jwkKey.getKeyUse != null)
+            Logger.trace("use" + jwkKey.getKeyUse.name() + "\n" )
+          Logger.trace("key" + jwkKey.asInstanceOf[RSAKey].toRSAPublicKey.toString + "\n")
+          //          "keyId" + jwkKey.getKeyID + "\n" +
+          //          "keyId" + jwkKey.getKeyID + "\n" +
+          //          "keyId" + jwkKey.getKeyID + "\n"
+        }
+
+        Logger.trace("key")
+
+        val sigKey = getJwkRsaSigKey(jwkSet)
+        Logger.trace("############sig keys = " + sigKey)
+
+        val sigKey1 = getJwkRsaSigKey(jwkSet, "key03")
+        Logger.trace("############sig keys 1= " + sigKey1)
+
+        val encKey1 = getJwkRsaEncKey(jwkSet, "key03")
+        Logger.trace("############enc keys 1= " + encKey1)
+
+        val encKey2 = getJwkRsaEncKey(jwkSet, "key04")
+        Logger.trace("############enc keys 2 = " + encKey2)
+      }
+
+
+
+      Ok(jwkString + "\n" + jws).as(TEXT)
     }
     catch {
       case e : Throwable => {BadRequest(e.toString + "\n" + e.getStackTraceString)}
