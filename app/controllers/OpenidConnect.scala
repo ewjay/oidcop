@@ -92,7 +92,7 @@ object OpenidConnect extends Controller with OptionalAuthElement with AuthConfig
     val issuerPath : String = "https://" + request.host + "/oidcop"
     val json : JsObject = Json.obj(
                                       "version" -> "3.0",
-                                      "issuer" -> issuerPath,
+                                      "issuer" -> getConfig("op.issuer"),
                                       "authorization_endpoint" -> (issuerPath + "/auth"),
       "token_endpoint" -> (issuerPath + "/token"),
       "userinfo_endpoint" -> (issuerPath + "/userinfo"),
