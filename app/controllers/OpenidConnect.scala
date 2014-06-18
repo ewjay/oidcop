@@ -397,7 +397,7 @@ object OpenidConnect extends Controller with OptionalAuthElement with AuthConfig
 
 
   def getRequestParamsAsJson(client : Client, req : Map[String, String]) : JsObject = {
-    val specialKeys : Seq[String] = Seq("claims", "request", "requst_uri")
+    val specialKeys : Seq[String] = Seq("claims", "request", "request_uri")
     val filtered : Map[String, String] = req.filterKeys(p => !specialKeys.contains(p))
 
     val params = filtered.map {
@@ -407,7 +407,7 @@ object OpenidConnect extends Controller with OptionalAuthElement with AuthConfig
     var jsonParams : JsObject = Json.obj(params.toSeq:_*)
     val claims = req.getOrElse("claims", "")
     if(!claims.isEmpty)
-      jsonParams = jsonParams ++ Json.parse(claims).as[JsObject]
+      jsonParams = jsonParams ++ Json.obj("claims"->Json.parse(claims).as[JsObject])
 
     var request = req.getOrElse("request", "")
     val requestUri = req.getOrElse("request_uri", "")
@@ -492,7 +492,7 @@ object OpenidConnect extends Controller with OptionalAuthElement with AuthConfig
     val idTokenClaims = getRequestClaims(req, "id_token")
     ((req \ "max_age").asOpt[String].getOrElse("none")) match {
       case "none"  => idTokenClaims
-      case maxAge : String => idTokenClaims :+ maxAge
+      case maxAge : String => if(!idTokenClaims.contains("auth_time")) idTokenClaims :+ "auth_time"; idTokenClaims
     }
   }
 
@@ -718,6 +718,7 @@ object OpenidConnect extends Controller with OptionalAuthElement with AuthConfig
             case "phone_number_verified" | "email_verified" => persona.fields.getOrElse(claimName, Some(false)).asInstanceOf[Option[Boolean]].get match {
               case verified : Boolean => (claimName, verified)
             }
+            // TODO Add ACR values
             case "address" => val addressMap = new java.util.HashMap[String, java.lang.Object]; addressMap.put("formatted", persona.fields.getOrElse(claimName, Some("")).asInstanceOf[Option[String]].get);(claimName, addressMap)
             case "updated_at" => (claimName, persona.fields.getOrElse(claimName, Some(DateTime.now)).asInstanceOf[Option[DateTime]].get)
             case "auth_time" => (claimName, cacheParams("auth_time").asInstanceOf[DateTime].getMillis)
@@ -942,6 +943,7 @@ object OpenidConnect extends Controller with OptionalAuthElement with AuthConfig
             case "phone_number_verified" | "email_verified" => persona.fields.getOrElse(claimName, Some(false)).asInstanceOf[Option[Boolean]].get match {
               case verified : Boolean => (claimName, verified)
             }
+            // TODO Add ACR values
             case "address" => val addressMap = new java.util.HashMap[String, java.lang.Object]; addressMap.put("formatted", persona.fields.getOrElse(claimName, Some("")).asInstanceOf[Option[String]].get);(claimName, addressMap)
             case "updated_at" => (claimName, persona.fields.getOrElse(claimName, Some(DateTime.now)).asInstanceOf[Option[DateTime]].get)
             case "auth_time" => (claimName, cacheParams("auth_time").asInstanceOf[DateTime].getMillis)
@@ -1244,6 +1246,7 @@ object OpenidConnect extends Controller with OptionalAuthElement with AuthConfig
           case "phone_number_verified" | "email_verified" => persona.fields.getOrElse(claimName, Some(false)).asInstanceOf[Option[Boolean]].get match {
             case verified : Boolean => (claimName, verified)
           }
+          // TODO Add ACR values
 //          case "address" => (claimName, new net.minidev.json.JSONObject().put("formatted", persona.fields.getOrElse(claimName, Some("")).asInstanceOf[Option[String]].get))
           case "address" => val addressMap = new java.util.HashMap[String, java.lang.Object]; addressMap.put("formatted", persona.fields.getOrElse(claimName, Some("")).asInstanceOf[Option[String]].get);(claimName, addressMap)
           case "updated_at" => (claimName, persona.fields.getOrElse(claimName, Some(DateTime.now)).asInstanceOf[Option[DateTime]].get)
