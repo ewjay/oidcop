@@ -33,6 +33,7 @@ CREATE TABLE `clients` (
   `tos_uri` varchar(255) DEFAULT NULL,
   `redirect_uris` text,
   `token_endpoint_auth_method` varchar(255) DEFAULT NULL,
+  `token_endpoint_auth_signing_alg` varchar(255) DEFAULT NULL,
   `policy_uri` varchar(255) DEFAULT NULL,
   `jwks_uri` varchar(255) DEFAULT NULL,
   `jwk_encryption_uri` varchar(255) DEFAULT NULL,

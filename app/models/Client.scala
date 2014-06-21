@@ -25,6 +25,7 @@ import models._
 //                    tos_uri : String,
 //                    redirect_uris : String,
 //                    token_endpoint_auth_method : String,
+//                    token_endpoint_auth_signing_alg : String,
 //                    policy_uri : String,
 //                    jwks_uri : String,
 //                    jwk_encryption_uri : String,
@@ -78,6 +79,7 @@ object Client {
     "tos_uri" -> None,
     "redirect_uris" -> None,
     "token_endpoint_auth_method" -> None,
+    "token_endpoint_auth_signing_alg" -> None,
     "policy_uri" -> None,
     "jwks_uri" -> None,
     "jwk_encryption_uri" -> None,
@@ -120,6 +122,7 @@ object Client {
       get[Option[String]]("clients.tos_uri") ~
       get[Option[String]]("clients.redirect_uris") ~
       get[Option[String]]("clients.token_endpoint_auth_method") ~
+      get[Option[String]]("clients.token_endpoint_auth_signing_alg") ~
       get[Option[String]]("clients.policy_uri") ~
       get[Option[String]]("clients.jwks_uri") ~
       get[Option[String]]("clients.jwk_encryption_uri") ~
@@ -143,7 +146,7 @@ object Client {
       get[Option[String]]("clients.request_uris") ~
       get[Option[String]]("clients.grant_types") ~
       get[Option[String]]("clients.response_types") map {
-           case id~client_id~client_secret~client_secret_expires_at~registration_access_token~registration_client_uri_path~contacts~application_type~client_name~logo_uri~tos_uri~redirect_uris~token_endpoint_auth_method~policy_uri~jwks_uri~jwk_encryption_uri~x509_uri~x509_encryption_uri~sector_identifier_uri~javascript_origin_uris~subject_type~request_object_signing_alg~userinfo_signed_response_alg~userinfo_encrypted_response_alg~userinfo_encrypted_response_enc~id_token_signed_response_alg~id_token_encrypted_response_alg~id_token_encrypted_response_enc~default_max_age~require_auth_time~default_acr_values~initiate_login_uri~post_logout_redirect_uri~request_uris~grant_types~response_types
+           case id~client_id~client_secret~client_secret_expires_at~registration_access_token~registration_client_uri_path~contacts~application_type~client_name~logo_uri~tos_uri~redirect_uris~token_endpoint_auth_method~token_endpoint_auth_signing_alg~policy_uri~jwks_uri~jwk_encryption_uri~x509_uri~x509_encryption_uri~sector_identifier_uri~javascript_origin_uris~subject_type~request_object_signing_alg~userinfo_signed_response_alg~userinfo_encrypted_response_alg~userinfo_encrypted_response_enc~id_token_signed_response_alg~id_token_encrypted_response_alg~id_token_encrypted_response_enc~default_max_age~require_auth_time~default_acr_values~initiate_login_uri~post_logout_redirect_uri~request_uris~grant_types~response_types
       => Client( Map(
                        "id"->id,
                        "client_id"->client_id,
@@ -158,6 +161,7 @@ object Client {
                        "tos_uri" -> tos_uri,
                        "redirect_uris" -> redirect_uris,
                        "token_endpoint_auth_method" -> token_endpoint_auth_method,
+                       "token_endpoint_auth_signing_alg" -> token_endpoint_auth_signing_alg,
                        "policy_uri" -> policy_uri,
                        "jwks_uri" -> jwks_uri,
                        "jwk_encryption_uri" -> jwk_encryption_uri,
@@ -281,6 +285,7 @@ object Client {
             "tos_uri" -> client.fields("tos_uri"),
             "redirect_uris" -> client.fields("redirect_uris"),
             "token_endpoint_auth_method" -> client.fields("token_endpoint_auth_method"),
+            "token_endpoint_auth_signing_alg" -> client.fields("token_endpoint_auth_signing_alg"),
             "policy_uri" -> client.fields("policy_uri"),
             "jwks_uri" -> client.fields("jwks_uri"),
             "jwk_encryption_uri" -> client.fields("jwk_encryption_uri"),
@@ -356,6 +361,7 @@ object Client {
 //        "tos_uri" -> client.fields("tos_uri"),
 //        "redirect_uris" -> client.fields("redirect_uris"),
 //        "token_endpoint_auth_method" -> client.fields("token_endpoint_auth_method"),
+//        "token_endpoint_auth_signing_alg" -> client.fields("token_endpoint_auth_signing_alg"),
 //        "policy_uri" -> client.fields("policy_uri"),
 //        "jwks_uri" -> client.fields("jwks_uri"),
 //        "jwk_encryption_uri" -> client.fields("jwk_encryption_uri"),
